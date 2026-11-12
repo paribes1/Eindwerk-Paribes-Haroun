@@ -1,0 +1,484 @@
+{
+  "title": "Spelermechanics en multiplayer in Unity",
+  "blocks": [
+    {
+      "type": "title",
+      "text": "Spelermechanics en multiplayer in Unity"
+    },
+    {
+      "type": "subtitle",
+      "text": "Eindwerk Paribes en Haroun\nTechnische documentatie van 12 november 2026"
+    },
+    {
+      "type": "paragraph",
+      "text": "Het project bevat een herbruikbare speler met lopen, sprinten, springen, hurken en camerabesturing. Player Mechanica is de afzonderlijke testscène voor deze bewegingen. Map bevat dezelfde spelermechanics met een directe multiplayerverbinding via het lokale netwerk. De speler blijft een capsule als tijdelijk 3D model. De scènes vormen een technische basis zonder punten, wapens, vijanden, missies of andere spelregels."
+    },
+    {
+      "type": "heading",
+      "text": "1 De twee scènes gebruiken"
+    },
+    {
+      "type": "table",
+      "columns": [
+        "Scène",
+        "Doel",
+        "Starten"
+      ],
+      "widths": [
+        1.3,
+        3.1,
+        2.4
+      ],
+      "rows": [
+        [
+          "Player Mechanica",
+          "Spelermechanics zelfstandig testen zonder verbinding.",
+          "Open Assets/Scenes/Player Mechanica.unity en druk op Play."
+        ],
+        [
+          "Map",
+          "Meerdere capsules samen bewegen en verbinden testen.",
+          "Open Assets/Scenes/Map.unity in elke instantie en kies een sessie in Play mode."
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "Open het project met Unity 6000.6.5f1. Laat Unity eerst de packages herstellen en de scripts compileren. De bestaande Input System package 1.20.0 verzorgt toetsenbord, muis en gamepad. Netcode for GameObjects 2.14.0 is aan Packages/manifest.json toegevoegd; Unity Transport 6.6.0 wordt via de pakketafhankelijkheden binnengehaald. De scènes gebruiken de al aanwezige HDRP renderpipeline."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "De testomgeving"
+    },
+    {
+      "type": "paragraph",
+      "text": "Beide scènes hebben een vloer van 40 bij 40 meter met een raster. Er staan vijf treden van telkens 25 centimeter hoogteverschil, een helling van 25 graden, springblokken van 50 en 100 centimeter en een lage doorgang met 1,35 meter vrije hoogte. Daarmee zijn botsingen, traplopen, springen en hurken gericht te controleren. Wie van de rand valt, keert automatisch terug naar de eigen startpositie."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Opbouw van de speler"
+    },
+    {
+      "type": "paragraph",
+      "text": "CapsulePlayer.prefab bevat een CharacterController en CapsulePlayerController op het hoofdobject. Capsule Visual is het zichtbare pilvormige model. Camera Pivot draagt Player Camera en een AudioListener. Het hoofdobject staat met zijn oorsprong bij de voeten. De zichtbare capsule heeft geen eigen collider: de CharacterController voert de botsingscontrole uit. Daardoor reageren de camerabeweging en het model op dezelfde speler zonder dubbele colliders."
+    },
+    {
+      "type": "paragraph",
+      "text": "NetworkCapsulePlayer.prefab bouwt daarop voort met NetworkObject, OwnerNetworkTransform en NetworkPlayer. De offline prefab heeft geen afhankelijkheid van Netcode. De netwerkprefab gebruikt exact dezelfde beweging en camera."
+    },
+    {
+      "type": "pagebreak"
+    },
+    {
+      "type": "heading",
+      "text": "2 Besturing en spelermechanics"
+    },
+    {
+      "type": "table",
+      "columns": [
+        "Handeling",
+        "Toetsenbord en muis",
+        "Gamepad"
+      ],
+      "widths": [
+        1.55,
+        3.0,
+        2.25
+      ],
+      "rows": [
+        [
+          "Bewegen",
+          "WASD of pijltjestoetsen",
+          "Linkerstick"
+        ],
+        [
+          "Rondkijken",
+          "Muis bewegen",
+          "Rechterstick"
+        ],
+        [
+          "Sprinten",
+          "Shift ingedrukt houden",
+          "Linkerstick indrukken en vasthouden"
+        ],
+        [
+          "Springen",
+          "Spatie",
+          "Onderste actieknop A of kruis"
+        ],
+        [
+          "Hurken",
+          "Linker Ctrl of C vasthouden",
+          "Rechterstick indrukken en vasthouden"
+        ],
+        [
+          "Camera wisselen",
+          "V",
+          "Rechterschouderknop"
+        ],
+        [
+          "Terug naar start",
+          "R",
+          "Geen afzonderlijke knop"
+        ],
+        [
+          "Muis vrijmaken",
+          "Escape",
+          "Startknop"
+        ],
+        [
+          "Besturing hervatten",
+          "Klik links buiten het sessiepaneel",
+          "Gebruik de muis om opnieuw vast te zetten"
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "Klik in het Game venster wanneer de speler geen invoer ontvangt. Escape maakt de cursor vrij zodat het sessiemenu bedienbaar is. Zolang de cursor vrij is of het venster geen focus heeft, verwerkt de speler geen horizontale bewegingsinvoer. Zwaartekracht blijft wel actief. Na een klik buiten de interface wordt de cursor opnieuw vastgezet."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Bewegen en springen"
+    },
+    {
+      "type": "paragraph",
+      "text": "De looprichting volgt de horizontale kijkrichting van de camera. Diagonale invoer wordt begrensd zodat schuin lopen niet sneller is. Versnelling en vertraging bouwen de snelheid op en af. In de lucht blijft een beperkte mate van richtingscontrole beschikbaar. De speler kan één keer springen vanaf de grond. Een korte tolerantie van 0,12 seconde na het verlaten van een rand en een invoerbuffer van 0,15 seconde vóór de landing maken de sprong minder afhankelijk van één exact frame."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Hurken en camera"
+    },
+    {
+      "type": "paragraph",
+      "text": "Hurken verlaagt de CharacterController, de zichtbare capsule en het camerapunt geleidelijk. Vóór opstaan controleert de controller met een capsulevormige overlap of er voldoende ruimte boven de speler is. Onder de lage doorgang blijft de speler dus gehurkt als de hurktoets wordt losgelaten. Hurken blokkeert sprinten en springen."
+    },
+    {
+      "type": "paragraph",
+      "text": "De camera start achter de speler en draait met de muis of rechterstick. Een bolvormige raycast schuift de camera naar voren wanneer een obstakel achter de speler staat. V wisselt naar een eerste persoonsperspectief; alleen het eigen model verdwijnt dan uit beeld. De capsule van andere spelers blijft zichtbaar. R en een val onder Y = -20 zetten positie, rotatie en bewegingssnelheid terug."
+    },
+    {
+      "type": "pagebreak"
+    },
+    {
+      "type": "heading",
+      "text": "3 Instellingen en hergebruik"
+    },
+    {
+      "type": "paragraph",
+      "text": "Selecteer de speler of open de prefab om de waarden in CapsulePlayerController te wijzigen. Pas algemene waarden bij voorkeur in CapsulePlayer.prefab aan, zodat de netwerkvariant dezelfde basis behoudt. De volgende waarden zijn de ingestelde standaardwaarden."
+    },
+    {
+      "type": "table",
+      "columns": [
+        "Instelling",
+        "Waarde",
+        "Betekenis"
+      ],
+      "widths": [
+        2.0,
+        1.25,
+        3.55
+      ],
+      "rows": [
+        [
+          "Walk Speed",
+          "4,5 m/s",
+          "Normale loopsnelheid"
+        ],
+        [
+          "Sprint Speed",
+          "7,5 m/s",
+          "Snelheid bij sprinten"
+        ],
+        [
+          "Crouch Speed",
+          "2,25 m/s",
+          "Snelheid tijdens hurken"
+        ],
+        [
+          "Acceleration",
+          "24 m/s²",
+          "Verandering van horizontale snelheid"
+        ],
+        [
+          "Air Control",
+          "0,4",
+          "Aandeel van de versnelling in de lucht"
+        ],
+        [
+          "Jump Height",
+          "1,25 m",
+          "Doelhoogte voor de berekende sprongimpuls"
+        ],
+        [
+          "Gravity",
+          "-24 m/s²",
+          "Neerwaartse versnelling"
+        ],
+        [
+          "Standing Height",
+          "2 m",
+          "Staande hoogte van de capsule"
+        ],
+        [
+          "Crouching Height",
+          "1,15 m",
+          "Hoogte bij hurken"
+        ],
+        [
+          "Third Person Distance",
+          "4 m",
+          "Gewenste cameraafstand"
+        ],
+        [
+          "Mouse Sensitivity",
+          "0,12",
+          "Schaalfactor voor muisbeweging"
+        ],
+        [
+          "Gamepad Look Speed",
+          "130 graden/s",
+          "Draaisnelheid bij maximale stickinvoer"
+        ],
+        [
+          "Fall Reset Height",
+          "Y = -20",
+          "Grens voor automatisch terugzetten"
+        ]
+      ],
+      "centerColumns": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "De CharacterController heeft een radius van 0,4 meter, een step offset van 0,3 meter en een slope limit van 45 graden. Deze instellingen bepalen welke kleine hoogteverschillen en hellingen zonder sprong kunnen worden genomen. De zichtbare capsule is een placeholder; vervang later het object Capsule Visual door een eigen model en houd de controller en camerahiërarchie in stand."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Aansluitpunten in de code"
+    },
+    {
+      "type": "paragraph",
+      "text": "Configure wijst het model, camerapunt en de camera toe. SetLocalControl bepaalt of deze instantie invoer, CharacterController, camera en AudioListener gebruikt. SetSpawnPoint bewaart de resetpositie; Warp verplaatst de speler direct en wist de snelheid. IsCrouching, IsGrounded en CurrentSpeed zijn beschikbaar om later bijvoorbeeld animaties of een eenvoudige statusweergave aan te sluiten. SetReplicatedCrouch laat externe spelers hun gehurkte model tonen."
+    },
+    {
+      "type": "paragraph",
+      "text": "De scripts bevatten geen levenspunten, inventaris, interactiesysteem of spelrondes. Zulke onderdelen kunnen later als afzonderlijke componenten worden toegevoegd. MechanicsHud toont uitsluitend de bedieningsinstructies en de functie van de testomgeving."
+    },
+    {
+      "type": "pagebreak"
+    },
+    {
+      "type": "heading",
+      "text": "4 Multiplayer in Map"
+    },
+    {
+      "type": "paragraph",
+      "text": "Map bevat het object Multiplayer Capabilities met NetworkManager, UnityTransport en MultiplayerSession. NetworkManager kent de netwerkprefab. Acht afzonderlijke spawnpunten voorkomen dat spelers op dezelfde startpositie verschijnen. De overzichtscamera is actief totdat er een lokale speler bestaat en komt terug wanneer de sessie stopt."
+    },
+    {
+      "type": "table",
+      "columns": [
+        "Optie",
+        "Gedrag"
+      ],
+      "widths": [
+        2.1,
+        4.7
+      ],
+      "rows": [
+        [
+          "Host starten",
+          "Start de server en één lokale speler in dezelfde instantie."
+        ],
+        [
+          "Client verbinden",
+          "Verbindt met het ingevulde IPv4 adres en maakt een eigen speler aan."
+        ],
+        [
+          "Alleen server starten",
+          "Start een server zonder lokale speler."
+        ],
+        [
+          "Sessie stoppen",
+          "Verbreekt de verbinding en maakt het startmenu weer bruikbaar."
+        ],
+        [
+          "Verbinden annuleren",
+          "Breekt een lopende verbindingspoging af."
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "Het standaardadres is 127.0.0.1 en de UDP poort is 7777. Dit adres verwijst naar dezelfde computer. Gebruik op een tweede computer het lokale IPv4 adres van de host. Het menu toont de gevonden lokale adressen. De host luistert op alle lokale netwerkinterfaces. Beide instanties moeten Map zelf openen; automatische scèneovergangen zijn voor deze testbasis uitgeschakeld."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Synchronisatie en eigendom"
+    },
+    {
+      "type": "paragraph",
+      "text": "Elke client bestuurt uitsluitend de eigen speler. NetworkPlayer activeert de invoer, camera en AudioListener van de eigenaar. Op andere instanties blijven deze onderdelen uitgeschakeld. OwnerNetworkTransform verstuurt de positie en horizontale rotatie van de eigenaar; interpolatie maakt de ontvangen beweging vloeiender. Schaal en kanteling van het hoofdobject worden niet gesynchroniseerd. Een NetworkVariable met schrijfrecht voor de eigenaar verstuurt de hurkstatus apart."
+    },
+    {
+      "type": "paragraph",
+      "text": "De server controleert bij verbinding een protocoltoken en protocolversie 1 en weigert een sessie die vol is. Maximum Players staat op 8 en kan in de Inspector worden aangepast. Een vertrokken speler geeft zijn spawnslot vrij. De netwerktick draait op 30 updates per seconde. Na 12 seconden zonder geslaagde verbinding stopt de verbindingspoging en verschijnt een melding. Ongeldige adressen, ongeldige poorten en transportfouten krijgen eveneens een statusmelding."
+    },
+    {
+      "type": "paragraph",
+      "text": "Voor de automatische netwerktest maak je via Tools > Player Mechanics > Maak multiplayer testbuild een testbuild. Voer daarna Tools/RunMultiplayerSmoke.ps1 uit. Dit script start een host en client op localhost via UDP 17777 en bewaart JSON resultaten en logs in Logs. De helpers onder Assets/Tests/Runtime worden alleen met expliciete testopties actief."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Grenzen van deze basis"
+    },
+    {
+      "type": "paragraph",
+      "text": "De verbinding is bedoeld voor directe tests op dezelfde computer of een lokaal netwerk. Er zijn geen accounts, matchmaking, lobbydienst, Relay of hostmigratie toegevoegd. De eigenaar berekent zijn eigen beweging; de server valideert deze beweging niet. Voor een competitieve online game zijn daarom aanvullende servercontrole, authenticatie en een geschikte internetverbindingsmethode nodig. De protocolcontrole is een compatibiliteitscontrole en is geen beveiliging of login."
+    },
+    {
+      "type": "pagebreak"
+    },
+    {
+      "type": "heading",
+      "text": "5 De werking testen"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Spelermechanics"
+    },
+    {
+      "type": "steps",
+      "items": [
+        "Open Player Mechanica, start Play mode en klik in het Game venster. Beweeg met WASD, sprint met Shift en controleer dat diagonaal lopen geen extra snelheid geeft.",
+        "Spring op de blokken, loop over de treden en test de helling. Controleer botsingen met de onderkant van de lage doorgang.",
+        "Hurk met Ctrl of C onder het dak. Laat de toets los terwijl de speler nog onder het dak staat. De capsule moet laag blijven en pas buiten de doorgang opstaan.",
+        "Wissel met V van camera. Zet met Escape de cursor vrij en hervat de besturing met een klik. Test R en loop van de vloerrand om de automatische reset te controleren."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Twee instanties op dezelfde computer"
+    },
+    {
+      "type": "steps",
+      "items": [
+        "Open Map in het hoofdproject. Gebruik de al aanwezige ParrelSync om een tweede projectinstantie te openen en open ook daar Map. Voor een losse multiplayerbuild plaats je Map bovenaan de Scene List in File > Build Profiles, zodat die build direct in Map start.",
+        "Start Play mode in beide instanties. Kies Host starten in de eerste instantie. Laat het adres in de tweede instantie op 127.0.0.1 en de poort op 7777 staan en kies Client verbinden.",
+        "Controleer dat er twee capsules op verschillende spawnpunten verschijnen. Beweeg en hurk in elke instantie en controleer de beweging van de andere speler. Elke instantie moet alleen de eigen camera en invoer gebruiken.",
+        "Stop de client, verbind opnieuw en controleer dat de extra capsule verdwijnt en terugkomt. Stop daarna de host en controleer dat de client een verbroken verbinding meldt."
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "Voor twee computers moeten beide dezelfde projectversie of build gebruiken en op hetzelfde bereikbare netwerk zitten. Vul op de client het IPv4 adres van de host in en gebruik dezelfde poort. Als de verbinding uitblijft, controleer dan het adres, of Map aan beide kanten draait, of er daadwerkelijk een host actief is en of UDP 7777 door de lokale firewall en het netwerk wordt toegelaten."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Een build automatisch laten verbinden"
+    },
+    {
+      "type": "paragraph",
+      "text": "MultiplayerSession herkent -networkMode host, -networkMode client en -networkMode server. Met -networkAddress 127.0.0.1 en -networkPort 7777 zijn het adres en de poort instelbaar. Deze opties gelden zodra Map geladen is. Een server kan zonder lokale speler worden gestart; de opties voegen geen zelfstandige internetdienst toe."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Scènes opnieuw opbouwen"
+    },
+    {
+      "type": "paragraph",
+      "text": "Tools > Player Mechanics > Bouw testscenes opnieuw maakt de twee testscènes en prefabs opnieuw uit de buildercode. Het commando vraagt eerst om gewijzigde open scènes op te slaan. Gebruik dit alleen wanneer de gegenereerde testomgeving bewust opnieuw moet worden gemaakt: eigen wijzigingen aan de twee gegenereerde scènes worden daarbij overschreven. Gewoon openen of importeren bouwt de scènes niet opnieuw op."
+    },
+    {
+      "type": "pagebreak"
+    },
+    {
+      "type": "heading",
+      "text": "6 Gewijzigde onderdelen en controle"
+    },
+    {
+      "type": "paragraph",
+      "text": "De implementatie is verdeeld over de volgende onderdelen. Unity metadata bij de bestanden bewaart de verwijzingen tussen scènes, prefabs, materialen en scripts."
+    },
+    {
+      "type": "table",
+      "columns": [
+        "Onderdeel",
+        "Locatie en functie"
+      ],
+      "widths": [
+        2.0,
+        4.8
+      ],
+      "rows": [
+        [
+          "Spelercontroller",
+          "Assets/PlayerMechanics/Scripts/CapsulePlayerController.cs\nBeweging, camera, hurken en reset."
+        ],
+        [
+          "Bedieningsweergave",
+          "Assets/PlayerMechanics/Scripts/MechanicsHud.cs\nInstructies in beide scènes."
+        ],
+        [
+          "Offline spelerprefab",
+          "Assets/PlayerMechanics/Prefabs/CapsulePlayer.prefab\nHerbruikbare capsule met controller en camera."
+        ],
+        [
+          "Netwerkspelerprefab",
+          "Assets/Multiplayer/Prefabs/NetworkCapsulePlayer.prefab\nSpeler met netwerkcomponenten.\nMechanicsNetworkPrefabs.asset bewaart de geregistreerde netwerkprefab."
+        ],
+        [
+          "Sessiebeheer",
+          "Assets/Multiplayer/Scripts/MultiplayerSession.cs\nMenu, verbinding, toelating en spawnpunten."
+        ],
+        [
+          "Speler op het netwerk",
+          "Assets/Multiplayer/Scripts/NetworkPlayer.cs\nEigendom, lokale besturing en hurkstatus.\nOwnerNetworkTransform.cs synchroniseert de beweging."
+        ],
+        [
+          "Scènebuilder",
+          "Assets/PlayerMechanics/Editor/MechanicsSceneBuilder.cs\nBouwt beide testscènes en prefabinstellingen."
+        ],
+        [
+          "Automatische controle",
+          "Assets/PlayerMechanics/Editor/MechanicsValidation.cs\nControle van physics, eigenaarschap en scenereferenties."
+        ],
+        [
+          "Shaders van de testbuild",
+          "Assets/PlayerMechanics/Editor/HeadlessSmokeShaderStripper.cs\nStript shaders alleen met -mechanicsHeadlessBuild."
+        ],
+        [
+          "Materialen en belichting",
+          "Assets/PlayerMechanics/Materials\nHDRP materialen en het profiel van de testomgeving."
+        ],
+        [
+          "Projectinstellingen",
+          "Packages/manifest.json en packages-lock.json\nNetcode en opgeloste afhankelijkheden.\nProjectSettings/EditorBuildSettings.asset\nBeide gevraagde scènes in de buildlijst."
+        ]
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Uitgevoerde verificatie"
+    },
+    {
+      "type": "paragraph",
+      "text": "Alle 19 automatische controles zijn geslaagd: scriptreferenties, spelermechanics, eigenaarschap, netwerkregistratie en opgeslagen prefab ID. Ook de Windows test met twee processen zonder beeld op localhost is geslaagd. Die bevestigt twee spelers, externe beweging en hurkstatus, opnieuw verbinden en opruimen op één computer. Resultaten staan in Logs/MechanicsValidation.txt en de JSON verslagen met smoke-host en smoke-client in Logs."
+    }
+  ]
+}
