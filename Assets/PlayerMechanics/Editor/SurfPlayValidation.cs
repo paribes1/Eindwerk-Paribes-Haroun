@@ -9,7 +9,7 @@ using UnityEngine.SceneManagement;
 
 namespace Eindwerk.PlayerMechanics.Editor
 {
-    /// <summary>Play-mode integration checks that survive the editor's domain reload.</summary>
+    /// <summary>Checks the original LAN flow plus surf checkpoints in actual Play mode.</summary>
     [InitializeOnLoad]
     public static class SurfPlayValidation
     {
@@ -27,14 +27,12 @@ namespace Eindwerk.PlayerMechanics.Editor
         [MenuItem("Tools/Surf/Validate Play Mode Integration")]
         public static void Begin()
         {
-            if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling)
-                throw new InvalidOperationException("Start surf Play validation from stable Edit mode.");
-            if (SessionState.GetBool(Key + "active", false))
-                throw new InvalidOperationException("Surf Play validation is already running.");
+            if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling
+                || SessionState.GetBool(Key + "active", false))
+                throw new InvalidOperationException("Start surf validation from stable Edit mode.");
             for (int index = 0; index < SceneManager.sceneCount; index++)
                 if (SceneManager.GetSceneAt(index).isDirty)
-                    throw new InvalidOperationException("Save modified scenes before surf Play validation.");
-
+                    throw new InvalidOperationException("Save modified scenes before surf validation.");
             EditorSceneManager.OpenScene(MechanicsSceneBuilder.MultiplayerScene);
             SessionState.SetString(Key + "results", DateTime.UtcNow.ToString("O") + "\n");
             SessionState.SetString(Key + "error", string.Empty);
@@ -42,9 +40,9 @@ namespace Eindwerk.PlayerMechanics.Editor
             SessionState.SetInt(Key + "phase", 0);
             SessionState.SetInt(Key + "goal", 0);
             SessionState.SetFloat(Key + "next", 0f);
-            SessionState.SetBool(Key + "active", true);
             Directory.CreateDirectory("Logs");
             File.WriteAllText(Report, "SURF_PLAY_VALIDATION_RUNNING\n");
+            SessionState.SetBool(Key + "active", true);
             Debug.Log("SURF_PLAY_VALIDATION_STARTED");
             EditorApplication.isPlaying = true;
         }
@@ -55,13 +53,9 @@ namespace Eindwerk.PlayerMechanics.Editor
             try
             {
                 string loggedError = SessionState.GetString(Key + "error", string.Empty);
-                if (!string.IsNullOrEmpty(loggedError))
-                    throw new InvalidOperationException("Runtime error during Play validation: " + loggedError);
-                if (!long.TryParse(SessionState.GetString(Key + "deadline", "0"), out long deadline)
-                    || DateTime.UtcNow.Ticks > deadline)
-                    throw new TimeoutException("Surf Play validation exceeded its 30 second deadline in phase "
-                        + SessionState.GetInt(Key + "phase", 0) + ".");
-
+                Check(string.IsNullOrEmpty(loggedError), "Runtime error: " + loggedError);
+                Check(long.TryParse(SessionState.GetString(Key + "deadline", "0"), out long deadline)
+                    && DateTime.UtcNow.Ticks <= deadline, "Surf validation exceeded its 30 second deadline.");
                 int phase = SessionState.GetInt(Key + "phase", 0);
                 if (phase == 0)
                 {
@@ -70,107 +64,99 @@ namespace Eindwerk.PlayerMechanics.Editor
                 }
                 if (!EditorApplication.isPlaying)
                 {
-                    if (!EditorApplication.isPlayingOrWillChangePlaymode)
-                        throw new InvalidOperationException("Play mode ended before validation completed.");
+                    Check(EditorApplication.isPlayingOrWillChangePlaymode, "Play mode ended before validation completed.");
                     return;
                 }
                 if (EditorApplication.isPaused || EditorApplication.isCompiling
                     || EditorApplication.timeSinceStartup < SessionState.GetFloat(Key + "next", 0f)) return;
 
-                KitsuneSurfCourse course = UnityEngine.Object.FindAnyObjectByType<KitsuneSurfCourse>();
-                Check(course != null && course.enabled && course.StageCount == 9,
-                    "Map contains an enabled nine-stage course");
-                CapsulePlayerController solo = FindSolo();
-                MultiplayerSession session = UnityEngine.Object.FindAnyObjectByType<MultiplayerSession>();
-                Check(session != null, "Map retains its LAN session component");
+                var course = UnityEngine.Object.FindAnyObjectByType<KitsuneSurfCourse>();
+                var session = UnityEngine.Object.FindAnyObjectByType<MultiplayerSession>();
+                var manager = UnityEngine.Object.FindAnyObjectByType<NetworkManager>();
+                Check(course != null && course.enabled && course.StageCount == 9, "Expected the nine-stage Map course.");
+                Check(session != null && manager != null, "Expected the original LAN session and manager.");
+                CapsulePlayerController player = FindOwnedMotor();
 
                 switch (phase)
                 {
                     case 1:
-                        CheckSolo(solo);
-                        CheckOneCameraAndListener();
-                        Pass("Solo Play spawns a locally controlled first-person surf player with one camera and listener");
-                        solo.ReleaseCursor();
-                        Vector3 start = StartPosition(course, 0);
-                        float killHeight = new SerializedObject(course).FindProperty("killHeights")
-                            .GetArrayElementAtIndex(0).floatValue;
-                        solo.Warp(new Vector3(start.x, killHeight - 3f, start.z), Quaternion.identity);
+                        Check(!session.IsSessionActive && Motors().Length == 0,
+                            "Map must start in the original lobby without any local or solo capsule.");
+                        CheckLobby();
+                        Pass("Map starts in its original lobby without a player or solo practice");
+                        session.SetEndpoint("127.0.0.1", 18777);
+                        Check(session.StartHost(), "LAN host could not start on validation port 18777.");
                         WaitForPhase(2, 1f);
                         break;
                     case 2:
-                        CheckSolo(solo);
-                        Check(course.ActiveStage == 0 && !course.Finished
-                            && Vector3.Distance(solo.transform.position, StartPosition(course, 0)) < 0.4f,
-                            "Falling below the stage boundary returns the player to its checkpoint");
-                        Pass("Fall reset returns to stage one without losing local control");
-                        SessionState.SetInt(Key + "goal", 0);
-                        WarpToGoal(course, solo, 0);
+                        if (!manager.IsHost || player == null || !player.HasLocalControl) return;
+                        Check(player.SurfEnabled && player.IsFirstPerson && player.GetComponent<CharacterController>().enabled,
+                            "LAN owner needs an active first-person surf motor.");
+                        Check(Motors().Length == 1, "Hosting must spawn exactly one network capsule.");
+                        CheckOneCameraAndListener();
+                        player.ReleaseCursor();
+                        Pass("Host spawns one owned first-person surf capsule with one camera and listener");
+                        WarpToGoal(course, player, 0);
                         WaitForPhase(3, 0.25f);
                         break;
                     case 3:
-                        int goal = SessionState.GetInt(Key + "goal", 0);
+                        Check(player != null && course.ActiveStage == 1 && !course.Finished,
+                            "The first goal must advance to the second stage.");
+                        CheckNearStart(course, player, 1);
+                        Pass("First goal teleports the LAN player to checkpoint two");
+                        player.Warp(StartPosition(course, 1) + new Vector3(3f, 1f, 0f), Quaternion.identity);
+                        course.RetryStage();
+                        Check(course.ActiveStage == 1 && !course.Finished, "Retry must retain the active checkpoint.");
+                        CheckNearStart(course, player, 1);
+                        Check(player.Velocity.sqrMagnitude < 0.0001f, "Retry must clear movement momentum.");
+                        Pass("Checkpoint retry preserves the stage and clears velocity");
+                        Vector3 start = StartPosition(course, 1);
+                        float kill = new SerializedObject(course).FindProperty("killHeights")
+                            .GetArrayElementAtIndex(1).floatValue;
+                        player.Warp(new Vector3(start.x, kill - 3f, start.z), Quaternion.identity);
+                        WaitForPhase(4, 1f);
+                        break;
+                    case 4:
+                        Check(player != null && course.ActiveStage == 1 && !course.Finished,
+                            "Falling must retain the current checkpoint.");
+                        CheckNearStart(course, player, 1);
+                        Pass("Falling below stage two returns to checkpoint two");
+                        SessionState.SetInt(Key + "goal", 1);
+                        WarpToGoal(course, player, 1);
+                        WaitForPhase(5, 0.25f);
+                        break;
+                    case 5:
+                        int goal = SessionState.GetInt(Key + "goal", 1);
                         bool last = goal == course.StageCount - 1;
-                        Check(course.ActiveStage == (last ? goal : goal + 1) && course.Finished == last,
-                            "Goal " + (goal + 1) + " advances the course exactly once");
-                        if (!last)
-                            Check(Vector3.Distance(solo.transform.position, StartPosition(course, goal + 1)) < 0.4f,
-                                "Goal transition uses the next checkpoint spawn");
+                        Check(player != null && course.ActiveStage == (last ? goal : goal + 1)
+                            && course.Finished == last, "Goal " + (goal + 1) + " must advance exactly once.");
+                        if (!last) CheckNearStart(course, player, goal + 1);
                         Pass("Goal " + (goal + 1) + (last ? " completes the course" : " advances to checkpoint " + (goal + 2)));
                         if (!last)
                         {
                             SessionState.SetInt(Key + "goal", goal + 1);
-                            WarpToGoal(course, solo, goal + 1);
-                            WaitForPhase(3, 0.25f);
+                            WarpToGoal(course, player, goal + 1);
+                            WaitForPhase(5, 0.25f);
                         }
                         else
                         {
-                            course.RestartRun();
-                            Check(course.ActiveStage == 0 && !course.Finished && course.RunTime == 0f,
-                                "Restart clears stage progress, completion and run time");
-                            Pass("Restart clears the completed run and returns to the first checkpoint");
-                            WaitForPhase(4, 1f);
+                            CheckOneCameraAndListener();
+                            session.StopSession();
+                            WaitForPhase(6, 1f);
                         }
                         break;
-                    case 4:
-                        CheckSolo(solo);
-                        Check(!session.IsSessionActive, "No LAN session is active before the host smoke check");
-                        session.SetEndpoint("127.0.0.1", 18777);
-                        Check(session.StartHost(), "LAN host starts on validation port 18777");
-                        WaitForPhase(5, 1f);
-                        break;
-                    case 5:
-                        NetworkManager manager = UnityEngine.Object.FindAnyObjectByType<NetworkManager>();
-                        NetworkPlayer owner = FindOwner();
-                        if (manager == null || !manager.IsHost || owner == null || solo == null
-                            || solo.gameObject.activeInHierarchy) return;
-                        CapsulePlayerController ownerMotor = owner.GetComponent<CapsulePlayerController>();
-                        if (!ownerMotor.HasLocalControl || !ownerMotor.SurfEnabled || !ownerMotor.IsFirstPerson) return;
-                        Check(!solo.HasLocalControl, "Solo control is disabled while the LAN owner is active");
-                        CheckOneCameraAndListener();
-                        Pass("LAN host spawns its owned surf player, suspends solo practice and keeps one camera and listener");
-                        session.StopSession();
-                        WaitForPhase(6, 1f);
-                        break;
                     case 6:
-                        NetworkManager stoppedManager = UnityEngine.Object.FindAnyObjectByType<NetworkManager>();
-                        if (stoppedManager != null && (stoppedManager.IsListening || stoppedManager.ShutdownInProgress)) return;
-                        if (solo == null || !solo.gameObject.activeInHierarchy || !solo.HasLocalControl) return;
-                        CheckSolo(solo);
-                        Check(FindOwner() == null, "Network owner despawns after stopping the session");
-                        CheckOneCameraAndListener();
-                        Check(course.ActiveStage == 0 && !course.Finished,
-                            "Restored solo practice starts a fresh course");
-                        Pass("Stopping LAN restores solo practice, checkpoint state and one camera and listener");
+                        if (manager.IsListening || manager.ShutdownInProgress || Motors().Length > 0) return;
+                        Check(FindOwnedMotor() == null, "The network owner must despawn after session stop.");
+                        CheckLobby();
+                        Pass("Stopping the session restores the original lobby without a leftover capsule");
                         Complete(null);
                         break;
                     default:
-                        throw new InvalidOperationException("Unexpected surf Play validation phase " + phase);
+                        throw new InvalidOperationException("Unexpected validation phase " + phase);
                 }
             }
-            catch (Exception error)
-            {
-                Complete(error);
-            }
+            catch (Exception error) { Complete(error); }
         }
 
         private static void WaitForPhase(int phase, float seconds)
@@ -179,27 +165,22 @@ namespace Eindwerk.PlayerMechanics.Editor
             SessionState.SetFloat(Key + "next", (float)EditorApplication.timeSinceStartup + seconds);
         }
 
-        private static CapsulePlayerController FindSolo()
-        {
-            foreach (var controller in UnityEngine.Object.FindObjectsByType<CapsulePlayerController>(
-                FindObjectsInactive.Include))
-                if (controller.name == "Solo Surf Player" && controller.GetComponent<NetworkPlayer>() == null)
-                    return controller;
-            return null;
-        }
+        private static CapsulePlayerController[] Motors() =>
+            UnityEngine.Object.FindObjectsByType<CapsulePlayerController>(FindObjectsInactive.Include);
 
-        private static NetworkPlayer FindOwner()
+        private static CapsulePlayerController FindOwnedMotor()
         {
             foreach (var candidate in UnityEngine.Object.FindObjectsByType<NetworkPlayer>())
-                if (candidate.IsSpawned && candidate.IsOwner) return candidate;
+                if (candidate.IsSpawned && candidate.IsOwner) return candidate.GetComponent<CapsulePlayerController>();
             return null;
         }
 
-        private static void CheckSolo(CapsulePlayerController solo)
+        private static void CheckLobby()
         {
-            Check(solo != null && solo.gameObject.activeInHierarchy && solo.HasLocalControl
-                && solo.SurfEnabled && solo.IsFirstPerson && solo.GetComponent<CharacterController>().enabled,
-                "Solo practice has an active locally controlled first-person surf capsule");
+            var lobby = GameObject.Find("Lobby Camera");
+            Check(lobby != null && lobby.GetComponent<Camera>().isActiveAndEnabled
+                && lobby.GetComponent<AudioListener>().isActiveAndEnabled, "The original lobby camera must be enabled.");
+            CheckOneCameraAndListener();
         }
 
         private static void CheckOneCameraAndListener()
@@ -210,42 +191,39 @@ namespace Eindwerk.PlayerMechanics.Editor
             foreach (var listener in UnityEngine.Object.FindObjectsByType<AudioListener>())
                 if (listener.isActiveAndEnabled) listeners++;
             Check(cameras == 1 && listeners == 1,
-                "Expected one enabled runtime camera and listener; found " + cameras + " cameras and " + listeners + " listeners");
+                "Expected one camera and listener; found " + cameras + " and " + listeners + ".");
         }
 
         private static Vector3 StartPosition(KitsuneSurfCourse course, int stage)
         {
-            var starts = new SerializedObject(course).FindProperty("stageStarts");
-            var start = starts.GetArrayElementAtIndex(stage).objectReferenceValue as Transform;
-            Check(start != null, "Checkpoint " + (stage + 1) + " exists");
+            var start = new SerializedObject(course).FindProperty("stageStarts")
+                .GetArrayElementAtIndex(stage).objectReferenceValue as Transform;
+            Check(start != null, "Checkpoint " + (stage + 1) + " is missing.");
             return start.position;
         }
 
-        private static void WarpToGoal(KitsuneSurfCourse course, CapsulePlayerController solo, int stage)
-        {
-            CheckSolo(solo);
-            Vector3 center = new SerializedObject(course).FindProperty("goalCenters")
-                .GetArrayElementAtIndex(stage).vector3Value;
-            solo.Warp(center, Quaternion.identity);
-        }
+        private static void CheckNearStart(KitsuneSurfCourse course, CapsulePlayerController player, int stage) =>
+            Check(Vector3.Distance(player.transform.position, StartPosition(course, stage)) < 0.4f,
+                "Player did not return to checkpoint " + (stage + 1) + ".");
+
+        private static void WarpToGoal(KitsuneSurfCourse course, CapsulePlayerController player, int stage) =>
+            player.Warp(new SerializedObject(course).FindProperty("goalCenters")
+                .GetArrayElementAtIndex(stage).vector3Value, Quaternion.identity);
 
         private static void Check(bool condition, string message)
         {
             if (!condition) throw new InvalidOperationException(message);
         }
 
-        private static void Pass(string message)
-        {
-            SessionState.SetString(Key + "results", SessionState.GetString(Key + "results", string.Empty)
-                + "PASS " + message + "\n");
-        }
+        private static void Pass(string message) => SessionState.SetString(Key + "results",
+            SessionState.GetString(Key + "results", string.Empty) + "PASS " + message + "\n");
 
         private static void OnLog(string condition, string stackTrace, LogType type)
         {
-            if (!SessionState.GetBool(Key + "active", false)
-                || (type != LogType.Error && type != LogType.Exception && type != LogType.Assert)
-                || !string.IsNullOrEmpty(SessionState.GetString(Key + "error", string.Empty))) return;
-            SessionState.SetString(Key + "error", condition + "\n" + stackTrace);
+            if (SessionState.GetBool(Key + "active", false)
+                && (type == LogType.Error || type == LogType.Exception || type == LogType.Assert)
+                && string.IsNullOrEmpty(SessionState.GetString(Key + "error", string.Empty)))
+                SessionState.SetString(Key + "error", condition + "\n" + stackTrace);
         }
 
         private static void Complete(Exception error)
@@ -267,10 +245,7 @@ namespace Eindwerk.PlayerMechanics.Editor
                 var session = UnityEngine.Object.FindAnyObjectByType<MultiplayerSession>();
                 if (session != null && session.IsSessionActive) session.StopSession();
             }
-            finally
-            {
-                EditorApplication.isPlaying = false;
-            }
+            finally { EditorApplication.isPlaying = false; }
             if (error == null) Debug.Log(Passed + "\n" + result);
             else Debug.LogError(Failed + "\n" + result);
         }

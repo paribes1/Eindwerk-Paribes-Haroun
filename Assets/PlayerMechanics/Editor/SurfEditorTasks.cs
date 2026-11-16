@@ -13,7 +13,16 @@ namespace Eindwerk.PlayerMechanics.Editor
         private const string Request = "Temp/SurfEditorRequest.txt";
         private const string Report = "Logs/SurfEditorReport.txt";
 
-        static SurfEditorTasks() => EditorApplication.update += Poll;
+        static SurfEditorTasks()
+        {
+            EditorApplication.update += Poll;
+            EditorApplication.playModeStateChanged += state =>
+            {
+                if (state != PlayModeStateChange.EnteredEditMode || !SessionState.GetBool("Surf.RestoreOriginalUI", false)) return;
+                SessionState.SetBool("Surf.RestoreOriginalUI", false);
+                RestoreOriginalInterface();
+            };
+        }
 
         private static void Poll()
         {
@@ -39,6 +48,15 @@ namespace Eindwerk.PlayerMechanics.Editor
                     EditorSceneManager.OpenScene(MechanicsSceneBuilder.MultiplayerScene);
                     ValidateCourse();
                     Write("PASS: Surf physics and course validation.");
+                }
+                else if (action == "stripback")
+                {
+                    if (EditorApplication.isPlayingOrWillChangePlaymode)
+                    {
+                        SessionState.SetBool("Surf.RestoreOriginalUI", true);
+                        EditorApplication.isPlaying = false;
+                    }
+                    else RestoreOriginalInterface();
                 }
                 else if (action == "play")
                 {
@@ -95,6 +113,20 @@ namespace Eindwerk.PlayerMechanics.Editor
                 view.LookAt(first.position + new Vector3(0, -35, 85), Quaternion.Euler(25, -28, 0), 115f);
                 view.Repaint();
             }
+        }
+
+        private static void RestoreOriginalInterface()
+        {
+            EditorSceneManager.SaveOpenScenes();
+            var scene = EditorSceneManager.OpenScene(MechanicsSceneBuilder.MultiplayerScene);
+            if (UnityEngine.Object.FindAnyObjectByType<MechanicsHud>() == null)
+                new GameObject("Mechanics Controls").AddComponent<MechanicsHud>().Configure(true);
+            var course = UnityEngine.Object.FindAnyObjectByType<KitsuneSurfCourse>();
+            EditorUtility.SetDirty(course);
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            ValidateCourse();
+            Write("PASS: Original controls HUD and session flow restored; surf map and checkpoints retained.");
         }
 
         private static void Write(string message)

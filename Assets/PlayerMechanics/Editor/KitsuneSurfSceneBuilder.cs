@@ -35,7 +35,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             BuildMaterials();
             var scene = EditorSceneManager.OpenScene(MechanicsSceneBuilder.MultiplayerScene);
             foreach (var item in scene.GetRootGameObjects())
-                if (item.name == "Mechanics Test Geometry" || item.name == "Mechanics Controls" || item.name == RootName)
+                if (item.name == "Mechanics Test Geometry" || item.name == RootName)
                     UnityEngine.Object.DestroyImmediate(item);
 
             var root = new GameObject(RootName);
@@ -55,7 +55,8 @@ namespace Eindwerk.PlayerMechanics.Editor
 
             var course = root.AddComponent<KitsuneSurfCourse>();
             course.ConfigureCourse(starts, goals, sizes, killHeights);
-            course.ConfigureSoloPrefab(AssetDatabase.LoadAssetAtPath<GameObject>(MechanicsSceneBuilder.PlayerPrefab));
+            if (UnityEngine.Object.FindAnyObjectByType<MechanicsHud>() == null)
+                new GameObject("Mechanics Controls").AddComponent<MechanicsHud>().Configure(true);
             ConfigureExistingSpawns(starts[0]);
             ConfigureLighting();
             var lobby = GameObject.Find("Lobby Camera");
