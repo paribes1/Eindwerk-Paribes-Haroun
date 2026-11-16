@@ -19,6 +19,8 @@ namespace Eindwerk.Multiplayer
         public override void OnNetworkSpawn()
         {
             controller = GetComponent<CapsulePlayerController>();
+            if (FindAnyObjectByType<KitsuneSurfCourse>() != null)
+                controller.ConfigureSurf();
             controller.SetSpawnPoint(transform.position, transform.rotation);
             if (IsOwner)
             {

@@ -31,6 +31,17 @@ namespace Eindwerk.PlayerMechanics
         [SerializeField, Range(0f, 0.3f)] private float jumpBufferTime = 0.15f;
         [SerializeField, Min(0.1f)] private float terminalFallSpeed = 45f;
 
+        [Header("CS Surf (opt in per map)")]
+        [SerializeField] private bool surfEnabled;
+        [SerializeField, Min(1f)] private float surfWishSpeed = 8f;
+        [SerializeField, Min(1f)] private float surfAirAcceleration = 150f;
+        [SerializeField, Min(0.01f)] private float surfAirWishSpeedCap = 0.762f;
+        [SerializeField, Min(0f)] private float surfGroundFriction = 6f;
+        [SerializeField, Min(1f)] private float surfGravity = 20.32f;
+        [SerializeField, Min(1f)] private float surfJumpSpeed = 6.4f;
+        [SerializeField, Min(1f)] private float surfMaximumSpeed = 88.9f;
+        [SerializeField, Range(0f, 60f)] private float surfWalkableAngle = 46f;
+
         [Header("Capsule")]
         [SerializeField, Min(1f)] private float standingHeight = 2f;
         [SerializeField, Min(0.8f)] private float crouchingHeight = 1.15f;
@@ -52,6 +63,9 @@ namespace Eindwerk.PlayerMechanics
 
         private readonly Collider[] standingObstructions = new Collider[24];
         private readonly RaycastHit[] cameraObstructions = new RaycastHit[24];
+        private readonly RaycastHit[] surfaceHits = new RaycastHit[24];
+        private readonly RaycastHit[] movementHits = new RaycastHit[24];
+        private readonly Vector3[] contactPlanes = new Vector3[8];
         private CharacterController character;
         private Renderer[] visualRenderers;
         private AudioListener cameraListener;
@@ -70,10 +84,21 @@ namespace Eindwerk.PlayerMechanics
         private bool referencesCached;
         private bool crouching;
         private bool spawnPointSet;
+        private bool surfGrounded;
+        private bool surfContact;
+        private bool collectingSurfContacts;
+        private int contactPlaneCount;
+        private float defaultSlopeLimit;
+        private float defaultStepOffset;
+        private bool surfMotorConfigured;
 
         public bool IsCrouching => crouching;
-        public bool IsGrounded => character != null && character.enabled && character.isGrounded;
+        public bool IsGrounded => character != null && character.enabled && (surfEnabled ? surfGrounded : character.isGrounded);
         public float CurrentSpeed { get; private set; }
+        public bool SurfEnabled => surfEnabled;
+        public bool IsSurfing => surfEnabled && surfContact && !surfGrounded;
+        public Vector3 Velocity => horizontalVelocity + Vector3.up * verticalVelocity;
+        public float SourceUnitsSpeed => CurrentSpeed / 0.0254f;
         public bool HasLocalControl => localControlEnabled;
         public bool CursorCaptured => localControlEnabled && Cursor.lockState == CursorLockMode.Locked;
         public bool IsFirstPerson => firstPerson;
@@ -86,6 +111,8 @@ namespace Eindwerk.PlayerMechanics
             if (!spawnPointSet)
                 SetSpawnPoint(transform.position, transform.rotation);
             yaw = transform.eulerAngles.y;
+            if (surfEnabled)
+                ConfigureSurf();
             ApplyControlState(false);
         }
 
@@ -123,6 +150,45 @@ namespace Eindwerk.PlayerMechanics
             spawnPointSet = true;
         }
 
+        /// <summary>Map-specific Source movement; the original mechanics scene keeps its own defaults.</summary>
+        public void ConfigureSurf(bool enabled = true)
+        {
+            CacheReferences();
+            surfEnabled = enabled;
+            if (enabled)
+            {
+                if (!surfMotorConfigured)
+                {
+                    defaultSlopeLimit = character.slopeLimit;
+                    defaultStepOffset = character.stepOffset;
+                    surfMotorConfigured = true;
+                }
+                // Grounding is classified below at 46 degrees. Let the capsule traverse steep
+                // tangents, including ramp launches, without its built-in climbing rejection.
+                character.slopeLimit = 89f;
+                character.stepOffset = 0f;
+                character.minMoveDistance = 0f;
+                firstPerson = true;
+                minimumPitch = -89f;
+                maximumPitch = 89f;
+                if (playerCamera != null)
+                {
+                    playerCamera.fieldOfView = 90f;
+                    playerCamera.farClipPlane = Mathf.Max(1800f, playerCamera.farClipPlane);
+                }
+            }
+            else if (surfMotorConfigured)
+            {
+                character.slopeLimit = defaultSlopeLimit;
+                character.stepOffset = defaultStepOffset;
+                surfMotorConfigured = false;
+            }
+            surfGrounded = false;
+            surfContact = false;
+            contactPlaneCount = 0;
+            SetVisualVisibility();
+        }
+
         /// <summary>Moves without CharacterController collision resistance and clears momentum.</summary>
         public void Warp(Vector3 position, Quaternion rotation)
         {
@@ -136,6 +202,9 @@ namespace Eindwerk.PlayerMechanics
             CurrentSpeed = 0f;
             lastGroundedTime = float.NegativeInfinity;
             lastJumpPressedTime = float.NegativeInfinity;
+            surfGrounded = false;
+            surfContact = false;
+            contactPlaneCount = 0;
             yaw = rotation.eulerAngles.y;
             pitch = 12f;
         }
@@ -225,7 +294,7 @@ namespace Eindwerk.PlayerMechanics
                         keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed);
                     sprint = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
                     crouchRequested = keyboard.leftCtrlKey.isPressed || keyboard.cKey.isPressed;
-                    if (keyboard.spaceKey.wasPressedThisFrame)
+                    if (surfEnabled ? keyboard.spaceKey.isPressed : keyboard.spaceKey.wasPressedThisFrame)
                         jumpRequested = true;
                     if (keyboard.vKey.wasPressedThisFrame)
                         ToggleView();
@@ -237,7 +306,7 @@ namespace Eindwerk.PlayerMechanics
                     movement += gamepad.leftStick.ReadValue();
                     sprint |= gamepad.leftStickButton.isPressed;
                     crouchRequested |= gamepad.rightStickButton.isPressed;
-                    if (gamepad.buttonSouth.wasPressedThisFrame)
+                    if (surfEnabled ? gamepad.buttonSouth.isPressed : gamepad.buttonSouth.wasPressedThisFrame)
                         jumpRequested = true;
                     if (gamepad.rightShoulder.wasPressedThisFrame)
                         ToggleView();
@@ -246,7 +315,7 @@ namespace Eindwerk.PlayerMechanics
             }
 
             // Keep gravity active while the pointer is free, but stop horizontal input.
-            if (!inputAllowed)
+            if (!inputAllowed && !surfEnabled)
                 horizontalVelocity = Vector3.zero;
             SimulateMovement(movement, sprint, crouchRequested, jumpRequested, Time.deltaTime);
         }
@@ -262,6 +331,11 @@ namespace Eindwerk.PlayerMechanics
             CacheReferences();
             if (!localControlEnabled || !character.enabled || deltaTime <= 0f)
                 return;
+            if (surfEnabled)
+            {
+                SimulateSurf(movement, sprint, crouchRequested, jumpPressed, deltaTime);
+                return;
+            }
             movementTime += deltaTime;
             if (jumpPressed)
                 lastJumpPressedTime = movementTime;
@@ -301,6 +375,161 @@ namespace Eindwerk.PlayerMechanics
             CurrentSpeed = new Vector2(actualVelocity.x, actualVelocity.z).magnitude;
             if (transform.position.y < fallResetHeight)
                 Warp(spawnPosition, spawnRotation);
+        }
+
+        private void SimulateSurf(Vector2 movement, bool walkRequested, bool crouchRequested,
+            bool jumpHeld, float deltaTime)
+        {
+            movement = Vector2.ClampMagnitude(movement, 1f);
+            crouching = crouchRequested || (crouching && !CanStand());
+            // Bounded, small physics steps keep high-speed contacts independent of render FPS.
+            float remaining = Mathf.Min(deltaTime, 0.1f);
+            UpdateCapsuleHeight(remaining);
+            Vector3 velocity = Velocity;
+            Vector3 wish = Quaternion.Euler(0f, yaw, 0f) * new Vector3(movement.x, 0f, movement.y);
+            float wishSpeed = surfWishSpeed * movement.magnitude * (crouching ? 0.34f : walkRequested ? 0.52f : 1f);
+            Vector3 wishDirection = wish.sqrMagnitude > 0f ? wish.normalized : Vector3.zero;
+            transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            surfContact = false;
+            int iterations = 0;
+            while (remaining > 0.00001f && iterations++ < 64)
+            {
+                float step = Mathf.Min(remaining, Mathf.Min(1f / 128f, 0.20f / Mathf.Max(1f, velocity.magnitude)));
+                remaining -= step;
+                movementTime += step;
+                bool hasSurface = ProbeSurfSurface(out Vector3 surfaceNormal);
+                float groundDot = Mathf.Cos(surfWalkableAngle * Mathf.Deg2Rad);
+                surfGrounded = hasSurface && surfaceNormal.y >= groundDot && velocity.y <= 0.1f;
+                bool onRamp = hasSurface && surfaceNormal.y > 0.01f && surfaceNormal.y < groundDot
+                    && Vector3.Dot(velocity, surfaceNormal) <= 0.25f;
+                surfContact |= onRamp;
+                if (surfGrounded)
+                {
+                    velocity.y = 0f;
+                    if (jumpHeld)
+                    {
+                        velocity.y = surfJumpSpeed;
+                        surfGrounded = false;
+                    }
+                    else
+                    {
+                        float speed = new Vector2(velocity.x, velocity.z).magnitude;
+                        float reduced = Mathf.Max(0f, speed - Mathf.Max(2.54f, speed) * surfGroundFriction * step);
+                        if (speed > 0f)
+                        {
+                            velocity.x *= reduced / speed;
+                            velocity.z *= reduced / speed;
+                        }
+                        Accelerate(ref velocity, wishDirection, wishSpeed, wishSpeed, 10f, step);
+                    }
+                }
+                if (!surfGrounded)
+                {
+                    // Source caps only the velocity projected onto the wish direction (30 u/s).
+                    // The acceleration still uses uncapped input speed; total air speed is not capped.
+                    Accelerate(ref velocity, wishDirection, Mathf.Min(wishSpeed, surfAirWishSpeedCap),
+                        wishSpeed, surfAirAcceleration, step);
+                    velocity.y -= surfGravity * step * 0.5f;
+                    if (onRamp)
+                        ClipIntoPlane(ref velocity, surfaceNormal);
+                }
+                velocity = Vector3.ClampMagnitude(velocity, surfMaximumSpeed);
+                contactPlaneCount = 0;
+                collectingSurfContacts = true;
+                Vector3 moveStart = transform.position;
+                Vector3 displacement = velocity * step + (surfGrounded ? Vector3.down * (0.5f * step) : Vector3.zero);
+                CollisionFlags collisions = character.Move(displacement);
+                collectingSurfContacts = false;
+                if (contactPlaneCount == 0 && (collisions & (CollisionFlags.Sides | CollisionFlags.Above)) != 0)
+                    RecoverSurfContacts(moveStart, displacement);
+                if (!surfGrounded)
+                    velocity.y -= surfGravity * step * 0.5f;
+                // Only remove velocity into each contact plane; preserve its full tangent.
+                for (int pass = 0; pass < 2; pass++)
+                    for (int i = 0; i < contactPlaneCount; i++)
+                        ClipIntoPlane(ref velocity, contactPlanes[i]);
+                velocity = Vector3.ClampMagnitude(velocity, surfMaximumSpeed);
+            }
+            horizontalVelocity = new Vector3(velocity.x, 0f, velocity.z);
+            verticalVelocity = velocity.y;
+            CurrentSpeed = horizontalVelocity.magnitude;
+            // Surf maps own their checkpoint/fall bounds; ordinary scenes retain the sandbox reset.
+        }
+
+        private static void Accelerate(ref Vector3 velocity, Vector3 direction, float projectedSpeedCap,
+            float inputSpeed, float rate, float deltaTime)
+        {
+            float addSpeed = projectedSpeedCap - Vector3.Dot(velocity, direction);
+            if (addSpeed > 0f)
+                velocity += direction * Mathf.Min(addSpeed, rate * inputSpeed * deltaTime);
+        }
+
+        private static void ClipIntoPlane(ref Vector3 velocity, Vector3 normal)
+        {
+            float intoSurface = Vector3.Dot(velocity, normal);
+            if (intoSurface < 0f)
+                velocity -= normal * intoSurface;
+        }
+
+        private bool ProbeSurfSurface(out Vector3 normal)
+        {
+            float radius = Mathf.Max(0.05f, character.radius - character.skinWidth);
+            Vector3 origin = transform.position + Vector3.up * (character.radius + 0.12f);
+            int count = Physics.SphereCastNonAlloc(origin, radius, Vector3.down, surfaceHits,
+                character.skinWidth * 2f + 0.20f, obstructionMask, QueryTriggerInteraction.Ignore);
+            float nearest = float.PositiveInfinity;
+            normal = Vector3.up;
+            for (int i = 0; i < count; i++)
+            {
+                RaycastHit hit = surfaceHits[i];
+                if (hit.collider == null || hit.transform.IsChildOf(transform) || hit.normal.y <= 0.01f)
+                    continue;
+                if (hit.distance < nearest)
+                {
+                    nearest = hit.distance;
+                    normal = hit.normal;
+                }
+            }
+            return nearest < float.PositiveInfinity;
+        }
+
+        private void OnControllerColliderHit(ControllerColliderHit hit)
+        {
+            if (!surfEnabled || !collectingSurfContacts || hit.collider.isTrigger)
+                return;
+            AddSurfContact(hit.normal);
+        }
+
+        private void AddSurfContact(Vector3 normal)
+        {
+            if (contactPlaneCount < contactPlanes.Length)
+                contactPlanes[contactPlaneCount++] = normal;
+            float normalY = normal.y;
+            if (normalY > 0.01f && normalY < Mathf.Cos(surfWalkableAngle * Mathf.Deg2Rad))
+                surfContact = true;
+        }
+
+        private void RecoverSurfContacts(Vector3 moveStart, Vector3 displacement)
+        {
+            // Unity can report blocked Move flags without delivering a controller hit message
+            // (notably during editor physics checks). Recover actual planes with a skin-inset
+            // sweep, so blocked momentum never depends on MonoBehaviour message delivery.
+            float distance = displacement.magnitude;
+            if (distance < 0.00001f)
+                return;
+            float radius = Mathf.Max(0.05f, character.radius - character.skinWidth * 2f);
+            Vector3 bottom = moveStart + Vector3.up * character.radius;
+            Vector3 top = moveStart + Vector3.up * (character.height - character.radius);
+            int count = Physics.CapsuleCastNonAlloc(bottom, top, radius, displacement / distance,
+                movementHits, distance + character.skinWidth * 2f + 0.005f, obstructionMask,
+                QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                RaycastHit hit = movementHits[i];
+                if (hit.collider != null && !hit.transform.IsChildOf(transform)
+                    && Vector3.Dot(displacement, hit.normal) < 0f)
+                    AddSurfContact(hit.normal);
+            }
         }
 
         private void LateUpdate()

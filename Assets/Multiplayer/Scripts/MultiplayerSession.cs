@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Eindwerk.PlayerMechanics;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -42,6 +43,7 @@ namespace Eindwerk.Multiplayer
         private GUIStyle titleStyle;
         private GUIStyle bodyStyle;
         private GUIStyle smallStyle;
+        private KitsuneSurfCourse surfCourse;
 
         public string Status => status;
         public bool IsSessionActive => networkManager != null && networkManager.IsListening;
@@ -75,6 +77,7 @@ namespace Eindwerk.Multiplayer
 
         private void Start()
         {
+            surfCourse = FindAnyObjectByType<KitsuneSurfCourse>();
             portText = port.ToString();
             localAddresses = GetLocalAddresses();
             if (!BindCallbacks())
@@ -301,6 +304,7 @@ namespace Eindwerk.Multiplayer
         {
             if (spectatorCamera == null)
                 return;
+            active &= surfCourse == null || !surfCourse.HasSoloPlayer;
             spectatorCamera.enabled = active;
             AudioListener listener = spectatorCamera.GetComponent<AudioListener>();
             if (listener != null)
@@ -367,9 +371,10 @@ namespace Eindwerk.Multiplayer
             }
 
             bool locked = Cursor.lockState == CursorLockMode.Locked;
+            if (locked && surfCourse != null) return;
             bool active = networkManager != null && (networkManager.IsListening || connecting || networkManager.ShutdownInProgress);
             GUILayout.BeginArea(GetPanelRect(), GUI.skin.box);
-            GUILayout.Label("MULTIPLAYER MECHANICS", titleStyle);
+            GUILayout.Label(surfCourse != null ? "KITSUNE / LAN SESSION" : "MULTIPLAYER MECHANICS", titleStyle);
             GUILayout.Label(status, bodyStyle);
             if (locked)
             {
