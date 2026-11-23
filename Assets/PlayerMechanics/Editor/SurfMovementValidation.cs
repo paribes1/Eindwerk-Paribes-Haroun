@@ -8,12 +8,32 @@ using UnityEngine.SceneManagement;
 
 namespace Eindwerk.PlayerMechanics.Editor
 {
-    /// <summary>Real capsule/surface checks, isolated from the player's authored scenes.</summary>
+    /// <summary>Controleert surfbeweging met echte botsingen in een tijdelijke scene.</summary>
     public static class SurfMovementValidation
     {
         private const float Step = 1f / 120f;
         private static readonly StringBuilder Results = new StringBuilder();
 
+        /// <summary>Voer de surf- en gewone bewegingstests samen uit.</summary>
+        public static void ValidateAllMovement()
+        {
+            // Een test zonder venster begint soms zonder geopende scene.
+            if (Application.isBatchMode)
+                EditorSceneManager.OpenScene(MechanicsSceneBuilder.OfflineScene);
+            var scenes = EditorSceneManager.GetSceneManagerSetup();
+            try
+            {
+                Validate();
+                MechanicsValidation.Validate();
+                Debug.Log("ALL_MOVEMENT_VALIDATION_PASSED");
+            }
+            finally
+            {
+                EditorSceneManager.RestoreSceneManagerSetup(scenes);
+            }
+        }
+
+        /// <summary>Test versnelling, springen, hellingen, muren en eigenaarschap.</summary>
         [MenuItem("Tools/Surf/Validate movement")]
         public static void Validate()
         {
@@ -35,8 +55,8 @@ namespace Eindwerk.PlayerMechanics.Editor
                 capsule.radius = 0.4f;
                 capsule.skinWidth = 0.035f;
                 var controller = player.AddComponent<CapsulePlayerController>();
-                // Edit-mode validation has no automatic Update, but keep the behaviour enabled
-                // so CharacterController collision messages reach its contact-plane collector.
+                // Laat de controller aan zodat botsingen ook in de editormodus doorkomen.
+                // De test roept de bewegingsstappen zelf aan.
                 controller.enabled = true;
                 controller.SetLocalControl(true);
                 controller.ConfigureSurf();
@@ -58,6 +78,44 @@ namespace Eindwerk.PlayerMechanics.Editor
                 Check(controller.Velocity.x > 0.7f && controller.Velocity.x < 0.8f
                     && controller.CurrentSpeed > takeoffSpeed,
                     "Air strafing adds directional speed without clamping total momentum");
+
+                controller.Warp(origin + Vector3.up * 0.08f, Quaternion.identity);
+                Advance(controller, Vector2.zero, 30);
+                Advance(controller, Vector2.up, 120);
+                float normalSpeed = controller.CurrentSpeed;
+                Advance(controller, Vector2.up, 90, sprint: true);
+                Check(controller.IsGrounded && controller.CurrentSpeed > 13.1f
+                    && controller.CurrentSpeed < 13.5f && controller.CurrentSpeed > normalSpeed * 1.5f,
+                    $"Shift versnelt op de grond van lopen naar sprinten " +
+                    $"(lopen={normalSpeed:F3}, sprinten={controller.CurrentSpeed:F3} m/s)");
+
+                controller.Warp(origin + Vector3.up * 0.08f, Quaternion.identity);
+                Advance(controller, Vector2.zero, 30);
+                Advance(controller, Vector2.up, 60);
+                controller.SimulateMovement(Vector2.up, false, false, true, Step);
+                Vector3 jumpMomentum = new Vector3(controller.Velocity.x, 0f, controller.Velocity.z);
+                Advance(controller, Vector2.up, 10, sprint: true);
+                Vector3 sprintJumpMomentum = new Vector3(controller.Velocity.x, 0f, controller.Velocity.z);
+                Check(!controller.IsGrounded && Vector3.Distance(jumpMomentum, sprintJumpMomentum) < 0.03f,
+                    $"Shift indrukken tijdens een sprong bewaart snelheid zonder directe boost " +
+                    $"(voor={jumpMomentum.magnitude:F3}, na={sprintJumpMomentum.magnitude:F3} m/s)");
+                Advance(controller, Vector2.up, 10);
+                Vector3 releasedJumpMomentum = new Vector3(controller.Velocity.x, 0f, controller.Velocity.z);
+                Check(!controller.IsGrounded && Vector3.Distance(jumpMomentum, releasedJumpMomentum) < 0.03f,
+                    $"Shift loslaten tijdens een sprong remt de speler niet af " +
+                    $"(voor={jumpMomentum.magnitude:F3}, na={releasedJumpMomentum.magnitude:F3} m/s)");
+
+                controller.Warp(origin + Vector3.up * 0.08f, Quaternion.identity);
+                Advance(controller, Vector2.zero, 30);
+                Advance(controller, Vector2.up, 120, crouch: true);
+                float crouchSpeed = controller.CurrentSpeed;
+                Check(controller.IsCrouching && crouchSpeed > 2.6f && crouchSpeed < 2.9f
+                    && crouchSpeed < normalSpeed * 0.5f,
+                    $"Hurken blijft trager dan lopen (hurken={crouchSpeed:F3} m/s)");
+                Advance(controller, Vector2.up, 120, sprint: true, crouch: true);
+                Check(controller.IsCrouching && Mathf.Abs(controller.CurrentSpeed - crouchSpeed) < 0.03f,
+                    $"Shift maakt de gehurkte speler niet sneller " +
+                    $"(zonder Shift={crouchSpeed:F3}, met Shift={controller.CurrentSpeed:F3} m/s)");
 
                 controller.Warp(origin + Vector3.up * 0.08f, Quaternion.identity);
                 Advance(controller, Vector2.zero, 30);
@@ -128,11 +186,12 @@ namespace Eindwerk.PlayerMechanics.Editor
             return box;
         }
 
-        private static void Advance(CapsulePlayerController controller, Vector2 movement, int count)
+        private static void Advance(CapsulePlayerController controller, Vector2 movement, int count,
+            bool sprint = false, bool crouch = false)
         {
             Physics.SyncTransforms();
             for (int i = 0; i < count; i++)
-                controller.SimulateMovement(movement, false, false, false, Step);
+                controller.SimulateMovement(movement, sprint, crouch, false, Step);
         }
 
         private static void Check(bool condition, string message, bool log = true)

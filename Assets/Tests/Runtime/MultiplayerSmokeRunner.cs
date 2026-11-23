@@ -12,8 +12,8 @@ using UnityEngine.SceneManagement;
 namespace Eindwerk.Tests
 {
     /// <summary>
-    /// Opt-in two-process integration check. Never runs in a normal editor or player session.
-    /// Launch a development build twice with -mechanicsSmoke host/client and distinct -smokeOutput paths.
+    /// Test multiplayer met twee aparte processen, alleen als de test expliciet wordt gestart.
+    /// Start de testbuild met -mechanicsSmoke host/client en een eigen -smokeOutput per proces.
     /// </summary>
     public sealed class MultiplayerSmokeRunner : MonoBehaviour
     {
@@ -61,7 +61,7 @@ namespace Eindwerk.Tests
 
         private IEnumerator Start()
         {
-            // Let the build's startup scene finish loading before opening the multiplayer scene.
+            // Wacht tot de startscene geladen is voordat de test Map opent.
             yield return null;
             if (SceneManager.GetActiveScene().name != "Map")
                 yield return SceneManager.LoadSceneAsync("Map", LoadSceneMode.Single);
@@ -104,12 +104,13 @@ namespace Eindwerk.Tests
             report.maximumSpawnedPlayers = Mathf.Max(report.maximumSpawnedPlayers, players.Length);
         }
 
+        /// <summary>Controleert of de host beweging, hurken en opnieuw verbinden van de client ziet.</summary>
         private IEnumerator RunHost()
         {
             Debug.Log("SMOKE_STAGE host waiting for first remote player");
             yield return WaitFor(() => SpawnedPlayers().Length == 2, "Host did not receive the first client.");
             if (finished || !CheckOwnership()) yield break;
-            // Handle a client that connected before the test subscribed to callbacks.
+            // Tel ook een client mee die al voor het aanmelden van de netwerkreacties verbonden was.
             report.remoteConnections = Mathf.Max(1, report.remoteConnections);
 
             Debug.Log("SMOKE_STAGE host checking replicated movement and crouch");
@@ -140,6 +141,7 @@ namespace Eindwerk.Tests
             Finish(true, "Host observed two peers, remote movement, remote crouch, disconnect, reconnect and final cleanup.");
         }
 
+        /// <summary>Laat de client bewegen, hurken, verbreken en opnieuw verbinden.</summary>
         private IEnumerator RunClient()
         {
             Debug.Log("SMOKE_STAGE client waiting for two players");
@@ -149,7 +151,7 @@ namespace Eindwerk.Tests
 
             ulong firstClientId = manager.LocalClientId;
             CapsulePlayerController controller = manager.LocalClient.PlayerObject.GetComponent<CapsulePlayerController>();
-            // The test supplies a single input source; disabling Update prevents keyboard state undoing crouch.
+            // De test stuurt zelf de beweging; schakel toetsenbordinvoer uit zodat hurken actief blijft.
             controller.enabled = false;
             controller.Warp(ClientTestPosition, Quaternion.Euler(0f, 90f, 0f));
             Debug.Log("SMOKE_STAGE client holding moved and crouched pose");
@@ -186,6 +188,7 @@ namespace Eindwerk.Tests
             Finish(true, "Client verified ownership, sent movement and crouch, removed old avatars, reconnected and shut down cleanly.");
         }
 
+        /// <summary>Controleert dat alleen de eigen speler besturing, een camera en geluid heeft.</summary>
         private bool CheckOwnership()
         {
             NetworkPlayer[] players = SpawnedPlayers();

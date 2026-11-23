@@ -11,9 +11,9 @@ using UnityEngine.Rendering.HighDefinition;
 namespace Eindwerk.PlayerMechanics.Editor
 {
     /// <summary>
-    /// Authors an original, Kitsune-inspired staged surf course into Map. The LAN
-    /// manager, registered network prefab and offline mechanics sandbox stay intact.
-    /// Geometry and its collision mesh are real saved assets, not play-mode objects.
+    /// Bouwt een surfparcours met negen etappes in Map, geïnspireerd op Kitsune.
+    /// Behoudt het LAN-netwerk en de aparte oefenscene.
+    /// Slaat de hellingen en hun botsingsvlakken op in het project.
     /// </summary>
     public static class KitsuneSurfSceneBuilder
     {
@@ -28,6 +28,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             if (EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) Build();
         }
 
+        /// <summary>Bouwt en bewaart het parcours en controleert de hellingen.</summary>
         public static void Build()
         {
             Directory.CreateDirectory(AssetFolder);
@@ -47,8 +48,8 @@ namespace Eindwerk.PlayerMechanics.Editor
             {
                 var stageRoot = new GameObject($"Stage {stage + 1:00}").transform;
                 stageRoot.SetParent(root.transform, false);
-                // The separate rooms are arranged as a broad, visible 3 by 3 atlas.
-                // Teleport checkpoints avoid long walks and preserve stage retries.
+                // De negen etappes staan in een raster van drie bij drie.
+                // Checkpoints verplaatsen de speler naar de volgende etappe.
                 stageRoot.position = new Vector3((stage % 3 - 1) * 180f, 0f, (stage / 3) * 300f);
                 BuildStage(stage, stageRoot, out starts[stage], out goals[stage], out sizes[stage], out killHeights[stage]);
             }
@@ -91,8 +92,8 @@ namespace Eindwerk.PlayerMechanics.Editor
             spawn.SetParent(parent, false);
             spawn.localPosition = new Vector3(0f, startHeight + 0.12f, -4f);
             spawn.localRotation = Quaternion.identity;
-            // The open front has no rails: jump onto either face, hold the strafe
-            // key toward the ridge and turn smoothly along the ramp.
+            // De voorkant blijft open om op de helling te springen.
+            // Houd A of D naar de nok en draai rustig mee met de helling.
             Beam("Back rail", parent, new Vector3(-14f, startHeight + 2f, -11f),
                 new Vector3(14f, startHeight + 2f, -11f), 0.16f, orangeMaterial);
             for (int side = -1; side <= 1; side += 2)
@@ -120,8 +121,8 @@ namespace Eindwerk.PlayerMechanics.Editor
                 lastRidge = ridge - 8f;
             }
 
-            // A generous catch deck extends below the last ramp's exit. A player
-            // needs to land inside this goal volume before the next stage starts.
+            // Het brede eindplatform ligt onder de laatste helling.
+            // De volgende etappe begint zodra de speler het doel bereikt.
             float goalY = lastRidge - 25f;
             Vector3 deck = new Vector3(0f, goalY - 1f, lastZ + 24f);
             Platform("Checkpoint catch deck", parent, deck, new Vector3(64f, 2f, 44f), false);
@@ -131,8 +132,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             goalSize = new Vector3(63f, 6f, 43f);
             killHeight = goalY - 24f;
 
-            // Framing ribs sit well outside the playable lane; they give each room
-            // the clean architectural silhouette of a staged surf map.
+            // De sierbalken staan buiten de route en omlijnen elke etappe.
             float roomDepth = lastZ + 48f;
             for (int side = -1; side <= 1; side += 2)
             {
@@ -263,7 +263,7 @@ namespace Eindwerk.PlayerMechanics.Editor
 
         private static void Digit(int value, Transform parent, Vector3 center)
         {
-            // Seven-segment sculpture avoids font/shader dependencies in HDRP.
+            // De cijfers bestaan uit balkjes en hebben geen lettertype nodig.
             int[] masks = { 0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f };
             Vector2[] a = { new Vector2(-1, 2), new Vector2(1, 2), new Vector2(1, 0), new Vector2(1, -2),
                 new Vector2(-1, -2), new Vector2(-1, 0), new Vector2(-1, 0) };
@@ -412,6 +412,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             return component;
         }
 
+        /// <summary>Controleert de negen starts en de botsingsvlakken van alle hellingen.</summary>
         [MenuItem("Tools/Surf/Validate Course Geometry")]
         public static void Validate()
         {

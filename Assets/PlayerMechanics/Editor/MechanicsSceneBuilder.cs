@@ -13,7 +13,7 @@ using UnityEngine.SceneManagement;
 
 namespace Eindwerk.PlayerMechanics.Editor
 {
-    /// <summary>Explicit, repeatable authoring command. Never rebuilds scenes on import.</summary>
+    /// <summary>Bouwt de oefenscenes en spelerprefabs alleen op aanvraag.</summary>
     public static class MechanicsSceneBuilder
     {
         public const string OfflineScene = "Assets/Scenes/Player Mechanica.unity";
@@ -28,7 +28,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             if (EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) Build();
         }
 
-        // Invoke through -executeMethod for initial authoring and automated verification.
+        /// <summary>Bouwt en bewaart beide oefenscenes en de spelerprefabs opnieuw.</summary>
         public static void Build()
         {
             Directory.CreateDirectory("Assets/PlayerMechanics/Prefabs");
@@ -44,7 +44,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             GameObject networkPlayer = BuildNetworkPrefab(player);
             BuildOffline(player);
             BuildMap(networkPlayer);
-            // Keep the two requested sandboxes at the front and retain other build entries.
+            // Zet de twee oefenscenes vooraan en behoud de overige buildscenes.
             var preserved = EditorBuildSettings.scenes.Where(s => s.path != OfflineScene && s.path != MultiplayerScene);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(OfflineScene, true),
                 new EditorBuildSettingsScene(MultiplayerScene, true) }.Concat(preserved).ToArray();
@@ -113,7 +113,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             root.AddComponent<NetworkPlayer>().Configure(root.transform.Find("Capsule Visual"));
             var prefab = PrefabUtility.SaveAsPrefabAsset(root, NetworkPrefab);
             UnityEngine.Object.DestroyImmediate(root);
-            // NGO calculates its prefab hash in OnValidate. The asset must already have a GUID.
+            // NGO berekent het prefab-ID in OnValidate. Sla de prefab daarom eerst op.
             var savedNetworkObject = prefab.GetComponent<NetworkObject>();
             typeof(NetworkObject).GetMethod("OnValidate", System.Reflection.BindingFlags.Instance |
                 System.Reflection.BindingFlags.NonPublic)?.Invoke(savedNetworkObject, null);
@@ -191,7 +191,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             volume.isGlobal = true;
             var profile = ScriptableObject.CreateInstance<VolumeProfile>();
             var sky = profile.Add<VisualEnvironment>(true); sky.skyType.Override(1);
-            // A gradient sky keeps the sandbox independent of imported textures.
+            // Een kleurverloop geeft de lucht kleur zonder extra afbeeldingen.
             sky.skyType.Override(3);
             var gradient = profile.Add<GradientSky>(true);
             gradient.top.Override(new Color(0.15f, 0.28f, 0.48f));

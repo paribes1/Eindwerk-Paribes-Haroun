@@ -10,12 +10,13 @@ using UnityEngine;
 
 namespace Eindwerk.PlayerMechanics.Editor
 {
-    /// <summary>Meaningful scene/physics checks runnable without desktop input.</summary>
+    /// <summary>Controleert beweging, botsingen en netwerkopbouw zonder handmatige invoer.</summary>
     public static class MechanicsValidation
     {
         private static readonly System.Text.StringBuilder results = new System.Text.StringBuilder();
         private const float Step = 1f / 60f;
 
+        /// <summary>Bouwt de oefenscenes opnieuw en voert de controles uit.</summary>
         public static void BuildAndValidate()
         {
             MechanicsSceneBuilder.Build();
@@ -31,6 +32,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             finally { EditorSceneManager.RestoreSceneManagerSetup(originalScenes); }
         }
 
+        /// <summary>Controleert de spelerbeweging in de oefenscene en de netwerkopbouw in Map.</summary>
         public static void Validate()
         {
             results.Clear();
@@ -123,6 +125,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             if (log) results.AppendLine("PASS " + label);
         }
 
+        /// <summary>Maakt een Windows-testbuild met alleen Map.</summary>
         [MenuItem("Tools/Player Mechanics/Maak multiplayer testbuild")]
         public static void BuildSmokePlayer()
         {
@@ -138,6 +141,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             Debug.Log("MECHANICS_SMOKE_BUILD_PASSED");
         }
 
+        /// <summary>Bouwt de scenes, controleert ze en maakt daarna een testbuild.</summary>
         public static void BuildValidateAndSmokePlayer()
         {
             BuildAndValidate();

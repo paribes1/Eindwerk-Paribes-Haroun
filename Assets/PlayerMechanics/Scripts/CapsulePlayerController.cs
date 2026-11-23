@@ -5,22 +5,22 @@ using UnityEngine.InputSystem;
 namespace Eindwerk.PlayerMechanics
 {
     /// <summary>
-    /// Reusable capsule movement and camera, independent of networking and game rules.
-    /// The root is at the feet. Only the local owner enables input and its camera.
+    /// Bestuurt de speler en de camera. De spelerpositie ligt bij de voeten.
+    /// Alleen de lokale speler verwerkt invoer; surf wordt per map aangezet.
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(CharacterController))]
     public sealed class CapsulePlayerController : MonoBehaviour
     {
-        [Header("References")]
+        [Header("Verwijzingen")]
         [SerializeField] private Transform visual;
         [SerializeField] private Transform cameraPivot;
         [SerializeField] private Camera playerCamera;
         [SerializeField] private bool localControlEnabled;
 
-        [Header("Movement")]
-        [SerializeField, Min(0.1f)] private float walkSpeed = 4.5f;
-        [SerializeField, Min(0.1f)] private float sprintSpeed = 7.5f;
+        [Header("Beweging")]
+        [SerializeField, Min(0.1f), Tooltip("Gewone loopsnelheid in m/s.")] private float walkSpeed = 4.5f;
+        [SerializeField, Min(0.1f), Tooltip("Sprint in m/s. Bij surf gebruiken we de verhouding sprinten/lopen.")] private float sprintSpeed = 7.5f;
         [SerializeField, Min(0.1f)] private float crouchSpeed = 2.25f;
         [SerializeField, Min(0.1f)] private float acceleration = 24f;
         [SerializeField, Range(0f, 1f)] private float airControl = 0.4f;
@@ -31,18 +31,18 @@ namespace Eindwerk.PlayerMechanics
         [SerializeField, Range(0f, 0.3f)] private float jumpBufferTime = 0.15f;
         [SerializeField, Min(0.1f)] private float terminalFallSpeed = 45f;
 
-        [Header("CS Surf (opt in per map)")]
+        [Header("CS-surf (per map)")]
         [SerializeField] private bool surfEnabled;
-        [SerializeField, Min(1f)] private float surfWishSpeed = 8f;
+        [SerializeField, Min(1f), Tooltip("Gewone doelsnelheid op de grond bij surf, in m/s.")] private float surfWishSpeed = 8f;
         [SerializeField, Min(1f)] private float surfAirAcceleration = 150f;
-        [SerializeField, Min(0.01f)] private float surfAirWishSpeedCap = 0.762f;
+        [SerializeField, Min(0.01f), Tooltip("Grens in de gekozen luchtrichting: 30 Source-eenheden/s = 0,762 m/s.")] private float surfAirWishSpeedCap = 0.762f;
         [SerializeField, Min(0f)] private float surfGroundFriction = 6f;
-        [SerializeField, Min(1f)] private float surfGravity = 20.32f;
+        [SerializeField, Min(1f), Tooltip("Zwaartekracht in m/s².")] private float surfGravity = 20.32f;
         [SerializeField, Min(1f)] private float surfJumpSpeed = 6.4f;
-        [SerializeField, Min(1f)] private float surfMaximumSpeed = 88.9f;
+        [SerializeField, Min(1f), Tooltip("Veilige bovengrens: 3500 Source-eenheden/s = 88,9 m/s.")] private float surfMaximumSpeed = 88.9f;
         [SerializeField, Range(0f, 60f)] private float surfWalkableAngle = 46f;
 
-        [Header("Capsule")]
+        [Header("Botsingsvorm")]
         [SerializeField, Min(1f)] private float standingHeight = 2f;
         [SerializeField, Min(0.8f)] private float crouchingHeight = 1.15f;
         [SerializeField, Min(0.1f)] private float crouchTransitionSpeed = 5f;
@@ -58,7 +58,7 @@ namespace Eindwerk.PlayerMechanics
         [SerializeField, Range(0.05f, 0.4f)] private float cameraCollisionRadius = 0.18f;
         [SerializeField] private LayerMask cameraCollisionMask = ~0;
 
-        [Header("Reset")]
+        [Header("Terugzetten")]
         [SerializeField] private float fallResetHeight = -20f;
 
         private readonly Collider[] standingObstructions = new Collider[24];
@@ -102,7 +102,7 @@ namespace Eindwerk.PlayerMechanics
         public bool HasLocalControl => localControlEnabled;
         public bool CursorCaptured => localControlEnabled && Cursor.lockState == CursorLockMode.Locked;
         public bool IsFirstPerson => firstPerson;
-        /// <summary>Optional UI hit test in bottom-left screen pixel coordinates.</summary>
+        /// <summary>Controleert of de muis op een menu staat. Pixels tellen vanaf linksonder.</summary>
         public System.Func<Vector2, bool> PointerBlocked;
 
         private void Awake()
@@ -121,7 +121,7 @@ namespace Eindwerk.PlayerMechanics
             ApplyControlState(localControlEnabled);
         }
 
-        /// <summary>Assign the capsule model, an eye pivot, and a child camera.</summary>
+        /// <summary>Koppelt het model, het draaipunt en de camera aan de speler.</summary>
         public void Configure(Transform capsuleVisual, Transform pivot, Camera viewCamera)
         {
             visual = capsuleVisual;
@@ -133,7 +133,7 @@ namespace Eindwerk.PlayerMechanics
             UpdateCapsuleVisual(standingHeight);
         }
 
-        /// <summary>Called by an offline scene or by a network ownership callback.</summary>
+        /// <summary>Zet invoer, botsingen en camera aan voor de lokale speler.</summary>
         public void SetLocalControl(bool enabledForThisPlayer)
         {
             if (localControlEnabled && !enabledForThisPlayer)
@@ -143,6 +143,7 @@ namespace Eindwerk.PlayerMechanics
             ApplyControlState(enabledForThisPlayer && Application.isPlaying);
         }
 
+        /// <summary>Slaat de plek op waar R of een val de speler terugzet.</summary>
         public void SetSpawnPoint(Vector3 position, Quaternion rotation)
         {
             spawnPosition = position;
@@ -150,7 +151,7 @@ namespace Eindwerk.PlayerMechanics
             spawnPointSet = true;
         }
 
-        /// <summary>Map-specific Source movement; the original mechanics scene keeps its own defaults.</summary>
+        /// <summary>Zet surf aan of uit en past de camera en botsingsinstellingen aan.</summary>
         public void ConfigureSurf(bool enabled = true)
         {
             CacheReferences();
@@ -163,8 +164,7 @@ namespace Eindwerk.PlayerMechanics
                     defaultStepOffset = character.stepOffset;
                     surfMotorConfigured = true;
                 }
-                // Grounding is classified below at 46 degrees. Let the capsule traverse steep
-                // tangents, including ramp launches, without its built-in climbing rejection.
+                // Onze code herkent grond tot 46°. Unity mag beweging langs steile rampen niet blokkeren.
                 character.slopeLimit = 89f;
                 character.stepOffset = 0f;
                 character.minMoveDistance = 0f;
@@ -189,7 +189,7 @@ namespace Eindwerk.PlayerMechanics
             SetVisualVisibility();
         }
 
-        /// <summary>Moves without CharacterController collision resistance and clears momentum.</summary>
+        /// <summary>Verplaatst de speler direct en wist de snelheid en oude botsingen.</summary>
         public void Warp(Vector3 position, Quaternion rotation)
         {
             CacheReferences();
@@ -209,7 +209,7 @@ namespace Eindwerk.PlayerMechanics
             pitch = 12f;
         }
 
-        /// <summary>Remote players only need their capsule presentation updated.</summary>
+        /// <summary>Werkt het hurken van andere spelers bij.</summary>
         public void SetReplicatedCrouch(bool isCrouching)
         {
             if (!localControlEnabled)
@@ -314,16 +314,16 @@ namespace Eindwerk.PlayerMechanics
                 UpdateLook(mouse, gamepad);
             }
 
-            // Keep gravity active while the pointer is free, but stop horizontal input.
+            // Zonder muisbesturing blijft zwaartekracht werken. Surf behoudt de opgebouwde snelheid.
             if (!inputAllowed && !surfEnabled)
                 horizontalVelocity = Vector3.zero;
             SimulateMovement(movement, sprint, crouchRequested, jumpRequested, Time.deltaTime);
         }
 
         /// <summary>
-        /// Input-independent movement step, also usable by automated physics checks.
-        /// Direction is relative to the camera yaw; call once per frame from one source.
-        /// Disable this MonoBehaviour if another input source calls this method directly.
+        /// Berekent beweging met tijd in seconden en snelheid in m/s.
+        /// De richting volgt de camera. Roep dit eenmaal per beeld aan.
+        /// Tests kunnen dit zonder toetsenbord gebruiken; surf heeft de botsingsmeldingen nodig.
         /// </summary>
         public void SimulateMovement(Vector2 movement, bool sprint, bool crouchRequested,
             bool jumpPressed, float deltaTime)
@@ -377,18 +377,21 @@ namespace Eindwerk.PlayerMechanics
                 Warp(spawnPosition, spawnRotation);
         }
 
-        private void SimulateSurf(Vector2 movement, bool walkRequested, bool crouchRequested,
+        private void SimulateSurf(Vector2 movement, bool sprintRequested, bool crouchRequested,
             bool jumpHeld, float deltaTime)
         {
             movement = Vector2.ClampMagnitude(movement, 1f);
             crouching = crouchRequested || (crouching && !CanStand());
-            // Bounded, small physics steps keep high-speed contacts independent of render FPS.
+            // Kleine stappen voorkomen gemiste botsingen bij hoge snelheid.
             float remaining = Mathf.Min(deltaTime, 0.1f);
             UpdateCapsuleHeight(remaining);
             Vector3 velocity = Velocity;
             Vector3 wish = Quaternion.Euler(0f, yaw, 0f) * new Vector3(movement.x, 0f, movement.y);
-            float wishSpeed = surfWishSpeed * movement.magnitude * (crouching ? 0.34f : walkRequested ? 0.52f : 1f);
+            // Shift verhoogt de doelsnelheid. Bestaande snelheid wordt niet direct aangepast.
+            float sprintFactor = sprintRequested ? Mathf.Max(1f, sprintSpeed / Mathf.Max(0.1f, walkSpeed)) : 1f;
+            float wishSpeed = surfWishSpeed * movement.magnitude * (crouching ? 0.34f : sprintFactor);
             Vector3 wishDirection = wish.sqrMagnitude > 0f ? wish.normalized : Vector3.zero;
+            float groundDot = Mathf.Cos(surfWalkableAngle * Mathf.Deg2Rad);
             transform.rotation = Quaternion.Euler(0f, yaw, 0f);
             surfContact = false;
             int iterations = 0;
@@ -398,7 +401,6 @@ namespace Eindwerk.PlayerMechanics
                 remaining -= step;
                 movementTime += step;
                 bool hasSurface = ProbeSurfSurface(out Vector3 surfaceNormal);
-                float groundDot = Mathf.Cos(surfWalkableAngle * Mathf.Deg2Rad);
                 surfGrounded = hasSurface && surfaceNormal.y >= groundDot && velocity.y <= 0.1f;
                 bool onRamp = hasSurface && surfaceNormal.y > 0.01f && surfaceNormal.y < groundDot
                     && Vector3.Dot(velocity, surfaceNormal) <= 0.25f;
@@ -425,8 +427,8 @@ namespace Eindwerk.PlayerMechanics
                 }
                 if (!surfGrounded)
                 {
-                    // Source caps only the velocity projected onto the wish direction (30 u/s).
-                    // The acceleration still uses uncapped input speed; total air speed is not capped.
+                    // Alleen de snelheid in de gekozen luchtrichting is begrensd op 30 Source-eenheden/s.
+                    // Daardoor blijft de totale opgebouwde snelheid behouden bij het bijsturen.
                     Accelerate(ref velocity, wishDirection, Mathf.Min(wishSpeed, surfAirWishSpeedCap),
                         wishSpeed, surfAirAcceleration, step);
                     velocity.y -= surfGravity * step * 0.5f;
@@ -444,7 +446,7 @@ namespace Eindwerk.PlayerMechanics
                     RecoverSurfContacts(moveStart, displacement);
                 if (!surfGrounded)
                     velocity.y -= surfGravity * step * 0.5f;
-                // Only remove velocity into each contact plane; preserve its full tangent.
+                // Verwijder alleen snelheid het oppervlak in; glijden langs het oppervlak blijft mogelijk.
                 for (int pass = 0; pass < 2; pass++)
                     for (int i = 0; i < contactPlaneCount; i++)
                         ClipIntoPlane(ref velocity, contactPlanes[i]);
@@ -453,9 +455,10 @@ namespace Eindwerk.PlayerMechanics
             horizontalVelocity = new Vector3(velocity.x, 0f, velocity.z);
             verticalVelocity = velocity.y;
             CurrentSpeed = horizontalVelocity.magnitude;
-            // Surf maps own their checkpoint/fall bounds; ordinary scenes retain the sandbox reset.
+            // De surfmap regelt zelf het checkpoint en de valgrens.
         }
 
+        /// <summary>Voegt alleen snelheid toe zolang de gekozen richting nog onder haar grens zit.</summary>
         private static void Accelerate(ref Vector3 velocity, Vector3 direction, float projectedSpeedCap,
             float inputSpeed, float rate, float deltaTime)
         {
@@ -511,9 +514,8 @@ namespace Eindwerk.PlayerMechanics
 
         private void RecoverSurfContacts(Vector3 moveStart, Vector3 displacement)
         {
-            // Unity can report blocked Move flags without delivering a controller hit message
-            // (notably during editor physics checks). Recover actual planes with a skin-inset
-            // sweep, so blocked momentum never depends on MonoBehaviour message delivery.
+            // Soms meldt Unity een botsing zonder de raakrichting door te geven.
+            // Zoek die richting dan met een iets kleinere botsingsvorm.
             float distance = displacement.magnitude;
             if (distance < 0.00001f)
                 return;
@@ -581,6 +583,7 @@ namespace Eindwerk.PlayerMechanics
             visual.localPosition = position;
         }
 
+        /// <summary>Controleert of er boven de speler genoeg vrije ruimte is om recht te staan.</summary>
         private bool CanStand()
         {
             float radius = Mathf.Max(0.05f, character.radius - 0.02f);

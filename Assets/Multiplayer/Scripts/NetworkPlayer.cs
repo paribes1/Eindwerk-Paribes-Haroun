@@ -4,18 +4,22 @@ using UnityEngine;
 
 namespace Eindwerk.Multiplayer
 {
+    /// <summary>Koppelt netwerkbeheer aan de besturing en het uiterlijk van een speler.</summary>
     [RequireComponent(typeof(NetworkObject), typeof(CapsulePlayerController))]
     public sealed class NetworkPlayer : NetworkBehaviour
     {
         [SerializeField] private Transform capsuleVisual;
 
+        // Alleen de eigenaar verstuurt of deze speler hurkt.
         private readonly NetworkVariable<bool> crouching = new NetworkVariable<bool>(
             false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
         private CapsulePlayerController controller;
 
+        /// <summary>Stelt het capsulemodel in dat de spelerskleur krijgt.</summary>
         public void Configure(Transform visual) => capsuleVisual = visual;
 
+        /// <summary>Stelt de speler in en geeft alleen de eigenaar lokale besturing.</summary>
         public override void OnNetworkSpawn()
         {
             controller = GetComponent<CapsulePlayerController>();
@@ -35,6 +39,7 @@ namespace Eindwerk.Multiplayer
             ApplyPlayerColor();
         }
 
+        /// <summary>Ruimt de netwerkreacties en lokale besturing op bij het verdwijnen.</summary>
         public override void OnNetworkDespawn()
         {
             crouching.OnValueChanged -= OnCrouchChanged;
@@ -69,6 +74,7 @@ namespace Eindwerk.Multiplayer
                 controller.SetReplicatedCrouch(current);
         }
 
+        /// <summary>Geeft elke speler een kleur zonder het gedeelde materiaal te wijzigen.</summary>
         private void ApplyPlayerColor()
         {
             Renderer visualRenderer = capsuleVisual != null

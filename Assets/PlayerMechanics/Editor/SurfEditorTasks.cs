@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Eindwerk.PlayerMechanics.Editor
 {
-    /// <summary>Explicit file-triggered editor jobs; no scene changes on ordinary imports.</summary>
+    /// <summary>Voert editoropdrachten uit vanuit Temp/SurfEditorRequest.txt.</summary>
     [InitializeOnLoad]
     public static class SurfEditorTasks
     {

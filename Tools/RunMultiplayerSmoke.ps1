@@ -1,3 +1,4 @@
+# Start een host en client op deze pc en controleer hun testrapporten.
 param([int]$Port = 17777)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -17,13 +18,16 @@ $hostArgs = @('-batchmode', '-nographics', '-mechanicsSmoke', 'host', '-networkP
 $clientArgs = @('-batchmode', '-nographics', '-mechanicsSmoke', 'client', '-networkPort', $Port,
     '-networkAddress', '127.0.0.1', '-smokeOutput', ('"' + $clientReport + '"'),
     '-logFile', ('"' + $clientLog + '"'))
+# Beide testprocessen draaien zonder zichtbaar venster.
 $hostProcess = Start-Process -FilePath $player -ArgumentList $hostArgs -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru
 $clientProcess = $null
 try {
+    # Geef de host tijd om de poort te openen voordat de client verbindt.
     Start-Sleep -Seconds 1
     $clientProcess = Start-Process -FilePath $player -ArgumentList $clientArgs -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru
     if (!$hostProcess.WaitForExit(55000)) { throw "Host timeout. Zie $hostLog" }
     if (!$clientProcess.WaitForExit(5000)) { throw "Client timeout. Zie $clientLog" }
+    # De test slaagt alleen als beide processen een geslaagd rapport schrijven.
     foreach ($reportPath in @($hostReport, $clientReport)) {
         if (!(Test-Path -LiteralPath $reportPath)) { throw "Testrapport ontbreekt: $reportPath" }
         $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
@@ -33,6 +37,7 @@ try {
     if ($hostProcess.ExitCode -ne 0 -or $clientProcess.ExitCode -ne 0) { throw 'Een testproces eindigde met een foutcode.' }
     Write-Output 'MULTIPLAYER_SMOKE_PASSED'
 } finally {
+    # Stop alleen de testprocessen die dit script zelf heeft gestart.
     foreach ($testProcess in @($hostProcess, $clientProcess)) {
         if ($null -ne $testProcess -and !$testProcess.HasExited) { $testProcess.Kill() }
     }

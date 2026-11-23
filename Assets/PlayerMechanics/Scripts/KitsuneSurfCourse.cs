@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 
 namespace Eindwerk.PlayerMechanics
 {
-    /// <summary>Surf checkpoints for the existing multiplayer player and session flow.</summary>
+    /// <summary>Bewaart het checkpoint en zet de lokale speler terug na R of een val.</summary>
     [DefaultExecutionOrder(200)]
     public sealed class KitsuneSurfCourse : MonoBehaviour
     {
@@ -23,6 +23,7 @@ namespace Eindwerk.PlayerMechanics
         public int ActiveStage => stage;
         public bool Finished => finished;
 
+        /// <summary>Koppelt per deel de startplek, het doel en de valgrens aan de map.</summary>
         public void ConfigureCourse(Transform[] starts, Vector3[] centers, Vector3[] sizes, float[] floors)
         {
             stageStarts = starts;
@@ -53,7 +54,7 @@ namespace Eindwerk.PlayerMechanics
             stage = 0;
             finished = false;
             player.ConfigureSurf();
-            // Keep the original session's allocated spawn until the first checkpoint.
+            // Gebruik bij het verbinden eerst de startplek die de sessie heeft gekozen.
             player.SetSpawnPoint(player.transform.position, player.transform.rotation);
             previousPosition = player.transform.position;
         }
@@ -67,8 +68,7 @@ namespace Eindwerk.PlayerMechanics
             }
             if (player == null || !player.HasLocalControl || !player.gameObject.activeInHierarchy) return;
 
-            // The original controller also handles R. Reset the sweep so a respawn
-            // cannot be mistaken for movement through a checkpoint.
+            // R verplaatst de speler direct. Tel die verplaatsing niet als een gepasseerd checkpoint.
             if (player.CursorCaptured && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
             {
                 RetryStage();
@@ -101,6 +101,7 @@ namespace Eindwerk.PlayerMechanics
             previousPosition = position;
         }
 
+        /// <summary>Zet de speler zonder snelheid terug bij het huidige checkpoint.</summary>
         public void RetryStage()
         {
             if (player == null) return;

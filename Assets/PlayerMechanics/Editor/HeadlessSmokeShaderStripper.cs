@@ -8,7 +8,7 @@ using UnityEngine.Rendering;
 
 namespace Eindwerk.PlayerMechanics.Editor
 {
-    /// <summary>Only explicit headless network test builds omit rendering code.</summary>
+    /// <summary>Slaat shaders alleen over bij netwerkproeven zonder beeld.</summary>
     public sealed class HeadlessSmokeShaderStripper : IPreprocessShaders, IPreprocessComputeShaders
     {
         public int callbackOrder => int.MaxValue;

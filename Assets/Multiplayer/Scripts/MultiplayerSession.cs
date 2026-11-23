@@ -10,8 +10,8 @@ using UnityEngine;
 namespace Eindwerk.Multiplayer
 {
     /// <summary>
-    /// Direct-IP LAN session menu, connection approval and spawn allocation.
-    /// No account, lobby service, internet relay or game rules are required.
+    /// Beheert het LAN-menu, verbindingen via een IP-adres en de startplaatsen.
+    /// Hiervoor zijn geen account of externe netwerkdiensten nodig.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class MultiplayerSession : MonoBehaviour
@@ -43,10 +43,14 @@ namespace Eindwerk.Multiplayer
         private GUIStyle bodyStyle;
         private GUIStyle smallStyle;
 
+        /// <summary>De melding die het sessiemenu toont.</summary>
         public string Status => status;
+        /// <summary>Geeft aan of deze instantie een netwerksessie heeft gestart.</summary>
         public bool IsSessionActive => networkManager != null && networkManager.IsListening;
+        /// <summary>Het maximale aantal spelers in een sessie.</summary>
         public int MaximumPlayers => maximumPlayers;
 
+        /// <summary>Stelt het hostadres en de poort in voordat de verbinding start.</summary>
         public void SetEndpoint(string hostAddress, ushort udpPort)
         {
             if (IsSessionActive || connecting)
@@ -56,6 +60,7 @@ namespace Eindwerk.Multiplayer
             portText = udpPort.ToString();
         }
 
+        /// <summary>Controleert of een muisklik in het menu valt. De schermpositie begint linksonder.</summary>
         public bool IsPointerOverMenu(Vector2 screenPosition)
         {
             if (Application.isBatchMode || Cursor.lockState == CursorLockMode.Locked)
@@ -63,6 +68,7 @@ namespace Eindwerk.Multiplayer
             return GetPanelRect().Contains(new Vector2(screenPosition.x, Screen.height - screenPosition.y));
         }
 
+        /// <summary>Koppelt de netwerkonderdelen, camera, spelerprefab en startplaatsen.</summary>
         public void Configure(NetworkManager manager, UnityTransport unityTransport,
             GameObject capsulePrefab, Camera overviewCamera, Transform[] points)
         {
@@ -100,8 +106,11 @@ namespace Eindwerk.Multiplayer
             return true;
         }
 
+        /// <summary>Start een server met een lokale speler.</summary>
         public bool StartHost() => StartSession(SessionMode.Host);
+        /// <summary>Verbindt een lokale speler met het ingestelde hostadres.</summary>
         public bool StartClient() => StartSession(SessionMode.Client);
+        /// <summary>Start alleen een server, zonder lokale speler.</summary>
         public bool StartServer() => StartSession(SessionMode.Server);
 
         private enum SessionMode { Host, Client, Server }
@@ -138,7 +147,7 @@ namespace Eindwerk.Multiplayer
             networkManager.NetworkConfig.ConnectionApproval = true;
             networkManager.NetworkConfig.ConnectionData = Encoding.UTF8.GetBytes(ProtocolToken);
             networkManager.NetworkConfig.ProtocolVersion = 1;
-            // Every instance explicitly opens Map before connecting; no cross-scene game flow.
+            // Elke instantie opent Map zelf voordat ze verbindt; het netwerk wisselt geen scenes.
             networkManager.NetworkConfig.EnableSceneManagement = false;
             networkManager.NetworkConfig.TickRate = 30;
             transport.SetConnectionData(mode == SessionMode.Client ? address : "127.0.0.1", port, "0.0.0.0");
@@ -171,6 +180,7 @@ namespace Eindwerk.Multiplayer
             }
         }
 
+        /// <summary>Stopt de verbinding en toont de overzichtscamera en muis weer.</summary>
         public void StopSession()
         {
             requestedStop = true;
@@ -203,6 +213,7 @@ namespace Eindwerk.Multiplayer
             }
         }
 
+        /// <summary>Controleert de projectversie en reserveert een vrije startplaats.</summary>
         private void ApproveConnection(NetworkManager.ConnectionApprovalRequest request,
             NetworkManager.ConnectionApprovalResponse response)
         {

@@ -3,8 +3,8 @@ using Unity.Netcode.Components;
 namespace Eindwerk.Multiplayer
 {
     /// <summary>
-    /// Immediate local movement, replicated to the server and other clients.
-    /// Intended for a mechanics prototype; competitive games need server movement validation.
+    /// Laat de eigenaar direct bewegen en deelt de positie met de andere spelers.
+    /// Dit prototype controleert de beweging nog niet op de server.
     /// </summary>
     public sealed class OwnerNetworkTransform : NetworkTransform
     {

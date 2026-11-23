@@ -2,13 +2,14 @@ using UnityEngine;
 
 namespace Eindwerk.PlayerMechanics
 {
-    /// <summary>Compact controls reference for the mechanics sandbox, without game rules.</summary>
+    /// <summary>Toont een korte uitleg van de besturing in de testomgeving.</summary>
     public sealed class MechanicsHud : MonoBehaviour
     {
         [SerializeField] private bool multiplayer;
         private GUIStyle panel;
         private GUIStyle text;
 
+        /// <summary>Kiest de titel voor de gewone testscene of de multiplayerscene.</summary>
         public void Configure(bool isMultiplayer) => multiplayer = isMultiplayer;
 
         private void OnGUI()

@@ -9,7 +9,7 @@ using UnityEngine.SceneManagement;
 
 namespace Eindwerk.PlayerMechanics.Editor
 {
-    /// <summary>Checks the original LAN flow plus surf checkpoints in actual Play mode.</summary>
+    /// <summary>Controleert de LAN-sessie en surfcheckpoints in de speelmodus.</summary>
     [InitializeOnLoad]
     public static class SurfPlayValidation
     {
@@ -24,6 +24,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             Application.logMessageReceived += OnLog;
         }
 
+        /// <summary>Start de speeltest. Sla gewijzigde scenes eerst op.</summary>
         [MenuItem("Tools/Surf/Validate Play Mode Integration")]
         public static void Begin()
         {
