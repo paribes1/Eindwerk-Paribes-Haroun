@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Eindwerk.PlayerMechanics;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -42,6 +43,7 @@ namespace Eindwerk.Multiplayer
         private GUIStyle titleStyle;
         private GUIStyle bodyStyle;
         private GUIStyle smallStyle;
+        private Vector2 menuScrollPosition;
 
         /// <summary>De melding die het sessiemenu toont.</summary>
         public string Status => status;
@@ -384,11 +386,12 @@ namespace Eindwerk.Multiplayer
             GUILayout.Label(status, bodyStyle);
             if (locked)
             {
-                GUILayout.Label("Escape: muis vrijmaken en sessiemenu openen", smallStyle);
+                GUILayout.Label("Escape: sessiemenu en instellingen openen", smallStyle);
                 GUILayout.EndArea();
                 return;
             }
 
+            menuScrollPosition = GUILayout.BeginScrollView(menuScrollPosition);
             GUILayout.Space(7f);
             if (!active)
             {
@@ -415,6 +418,10 @@ namespace Eindwerk.Multiplayer
                 if (GUILayout.Button(connecting ? "Verbinden annuleren" : "Sessie stoppen", GUILayout.Height(32)))
                     StopSession();
             }
+            GUILayout.Space(8f);
+            GUILayout.Label("Instellingen", titleStyle);
+            MechanicsHud.DrawMouseSensitivity();
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
@@ -423,8 +430,8 @@ namespace Eindwerk.Multiplayer
             bool locked = Cursor.lockState == CursorLockMode.Locked;
             bool active = networkManager != null &&
                 (networkManager.IsListening || connecting || networkManager.ShutdownInProgress);
-            return new Rect(12f, 12f, Mathf.Max(100f, Mathf.Min(440f, Screen.width - 24f)),
-                locked ? 125f : active ? 260f : 390f);
+            float height = Mathf.Min(Screen.height - 24f, locked ? 125f : active ? 260f : 440f);
+            return new Rect(12f, 12f, Mathf.Max(100f, Mathf.Min(440f, Screen.width - 24f)), height);
         }
     }
 }

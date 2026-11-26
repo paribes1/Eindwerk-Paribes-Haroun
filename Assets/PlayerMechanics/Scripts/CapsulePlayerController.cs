@@ -12,6 +12,25 @@ namespace Eindwerk.PlayerMechanics
     [RequireComponent(typeof(CharacterController))]
     public sealed class CapsulePlayerController : MonoBehaviour
     {
+        private const string MouseSensitivityKey = "Controls.MouseSensitivityPercent";
+        internal const int DefaultMouseSensitivityPercent = 100;
+        internal const int MinimumMouseSensitivityPercent = 10;
+        internal const int MaximumMouseSensitivityPercent = 300;
+        private static int? mouseSensitivityPercent;
+
+        internal static int MouseSensitivityPercent
+        {
+            get => mouseSensitivityPercent ??= Mathf.Clamp(
+                PlayerPrefs.GetInt(MouseSensitivityKey, DefaultMouseSensitivityPercent),
+                MinimumMouseSensitivityPercent, MaximumMouseSensitivityPercent);
+            set
+            {
+                mouseSensitivityPercent = Mathf.Clamp(value,
+                    MinimumMouseSensitivityPercent, MaximumMouseSensitivityPercent);
+                PlayerPrefs.SetInt(MouseSensitivityKey, mouseSensitivityPercent.Value);
+            }
+        }
+
         [Header("Verwijzingen")]
         [SerializeField] private Transform visual;
         [SerializeField] private Transform cameraPivot;
@@ -555,7 +574,9 @@ namespace Eindwerk.PlayerMechanics
 
         private void UpdateLook(Mouse mouse, Gamepad gamepad)
         {
-            Vector2 look = mouse != null ? mouse.delta.ReadValue() * mouseSensitivity : Vector2.zero;
+            Vector2 look = mouse != null
+                ? mouse.delta.ReadValue() * (mouseSensitivity * MouseSensitivityPercent / 100f)
+                : Vector2.zero;
             if (gamepad != null)
                 look += gamepad.rightStick.ReadValue() * gamepadLookSpeed * Time.deltaTime;
             yaw += look.x;
@@ -635,7 +656,8 @@ namespace Eindwerk.PlayerMechanics
         private bool PointerOverInterface(Vector2 pointerPosition)
         {
             return (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
-                || (PointerBlocked != null && PointerBlocked(pointerPosition));
+                || (PointerBlocked != null && PointerBlocked(pointerPosition))
+                || (FindAnyObjectByType<MechanicsHud>() is MechanicsHud hud && hud.IsPointerOverSettings(pointerPosition));
         }
 
         private void OnApplicationFocus(bool focused)
