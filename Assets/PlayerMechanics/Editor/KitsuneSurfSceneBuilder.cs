@@ -11,7 +11,7 @@ using UnityEngine.Rendering.HighDefinition;
 namespace Eindwerk.PlayerMechanics.Editor
 {
     /// <summary>
-    /// Bouwt een surfparcours met negen etappes in Map, geïnspireerd op Kitsune.
+    /// Bouwt een surfparcours met twaalf etappes in Map, geïnspireerd op Kitsune.
     /// Behoudt het LAN-netwerk en de aparte oefenscene.
     /// Slaat de hellingen en hun botsingsvlakken op in het project.
     /// </summary>
@@ -19,6 +19,7 @@ namespace Eindwerk.PlayerMechanics.Editor
     {
         private const string AssetFolder = "Assets/PlayerMechanics/Surf";
         private const string RootName = "Kitsune Surf Course";
+        internal const int CourseStageCount = 12;
         private const float FaceAngle = 55f;
         private static Material rampMaterial, darkMaterial, paleMaterial, orangeMaterial, blueMaterial;
 
@@ -40,19 +41,12 @@ namespace Eindwerk.PlayerMechanics.Editor
                     UnityEngine.Object.DestroyImmediate(item);
 
             var root = new GameObject(RootName);
-            var starts = new Transform[9];
-            var goals = new Vector3[9];
-            var sizes = new Vector3[9];
-            var killHeights = new float[9];
+            var starts = new Transform[CourseStageCount];
+            var goals = new Vector3[CourseStageCount];
+            var sizes = new Vector3[CourseStageCount];
+            var killHeights = new float[CourseStageCount];
             for (int stage = 0; stage < starts.Length; stage++)
-            {
-                var stageRoot = new GameObject($"Stage {stage + 1:00}").transform;
-                stageRoot.SetParent(root.transform, false);
-                // De negen etappes staan in een raster van drie bij drie.
-                // Checkpoints verplaatsen de speler naar de volgende etappe.
-                stageRoot.position = new Vector3((stage % 3 - 1) * 180f, 0f, (stage / 3) * 300f);
-                BuildStage(stage, stageRoot, out starts[stage], out goals[stage], out sizes[stage], out killHeights[stage]);
-            }
+                BuildStage(stage, root.transform, out starts[stage], out goals[stage], out sizes[stage], out killHeights[stage]);
 
             var course = root.AddComponent<KitsuneSurfCourse>();
             course.ConfigureCourse(starts, goals, sizes, killHeights);
@@ -76,16 +70,22 @@ namespace Eindwerk.PlayerMechanics.Editor
                     Quaternion.Euler(25f, -28f, 0f), 165f);
             Selection.activeGameObject = root;
             Validate();
-            Debug.Log("KITSUNE_SURF_COURSE_BUILT: Map now contains nine staged surf lanes and preserved LAN capabilities.");
+            Debug.Log("KITSUNE_SURF_COURSE_BUILT: Map now contains twelve staged surf lanes and preserved LAN capabilities.");
         }
 
-        private static void BuildStage(int stage, Transform parent, out Transform spawn,
+        private static void BuildStage(int stage, Transform course, out Transform spawn,
             out Vector3 goal, out Vector3 goalSize, out float killHeight)
         {
+            var parent = new GameObject($"Stage {stage + 1:00}").transform;
+            parent.SetParent(course, false);
+            parent.localPosition = new Vector3((stage % 3 - 1) * 180f, 0f, (stage / 3) * 300f);
+
+            int advancedIndex = stage - 9;
+            bool advanced = advancedIndex >= 0;
             const float startHeight = 120f;
             int rampCount = stage < 3 ? 2 : 3;
-            float length = 54f + (stage % 3) * 4f;
-            float spacing = length + 10f;
+            float length = advanced ? 56f - advancedIndex * 4f : 54f + (stage % 3) * 4f;
+            float spacing = length + (advanced ? 13f + advancedIndex * 2f : 10f);
             float firstZ = 20f;
             Platform("Start deck", parent, new Vector3(0f, startHeight - 1f, 0f), new Vector3(28f, 2f, 22f), true);
             spawn = new GameObject("Checkpoint spawn").transform;
@@ -110,12 +110,12 @@ namespace Eindwerk.PlayerMechanics.Editor
                 float offset = sign * (stage < 3 ? 7f : 8f + (stage % 3));
                 float zStart = firstZ + ramp * spacing;
                 float ridge = 103f - ramp * 32f;
-                float turn = stage < 2 ? 0f : sign * (stage % 3 + 1) * 2f;
+                float turn = stage < 2 ? 0f : sign * (advanced ? 7f + advancedIndex * 2f : (stage % 3 + 1) * 2f);
                 var rampRoot = new GameObject($"Surf ramp {ramp + 1} - {FaceAngle:0} degrees").transform;
                 rampRoot.SetParent(parent, false);
                 rampRoot.localPosition = new Vector3(offset, ridge, zStart + length * 0.5f);
                 rampRoot.localRotation = Quaternion.Euler(0f, turn, 0f);
-                float halfWidth = stage == 8 ? 12f : 10f;
+                float halfWidth = advanced ? 10f - advancedIndex : stage == 8 ? 12f : 10f;
                 Ramp(rampRoot, stage, ramp, length, halfWidth, 8f);
                 lastZ = zStart + length;
                 lastRidge = ridge - 8f;
@@ -126,7 +126,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             float goalY = lastRidge - 25f;
             Vector3 deck = new Vector3(0f, goalY - 1f, lastZ + 24f);
             Platform("Checkpoint catch deck", parent, deck, new Vector3(64f, 2f, 44f), false);
-            Portal(parent, new Vector3(0f, goalY, lastZ + 32f), stage == 8 ? blueMaterial : orangeMaterial);
+            Portal(parent, new Vector3(0f, goalY, lastZ + 32f), stage == CourseStageCount - 1 ? blueMaterial : orangeMaterial);
             Arrow(parent, new Vector3(0f, goalY + 0.025f, lastZ + 16f), 5f, orangeMaterial);
             goal = parent.TransformPoint(new Vector3(0f, goalY + 2.5f, lastZ + 24f));
             goalSize = new Vector3(63f, 6f, 43f);
@@ -412,14 +412,14 @@ namespace Eindwerk.PlayerMechanics.Editor
             return component;
         }
 
-        /// <summary>Controleert de negen starts en de botsingsvlakken van alle hellingen.</summary>
+        /// <summary>Controleert alle starts en de botsingsvlakken van alle hellingen.</summary>
         [MenuItem("Tools/Surf/Validate Course Geometry")]
         public static void Validate()
         {
             Physics.SyncTransforms();
             var root = GameObject.Find(RootName);
             if (root == null) throw new InvalidOperationException("Open Map and build the Kitsune course before validating.");
-            if (root.transform.childCount != 9) throw new InvalidOperationException("Expected nine stages.");
+            if (root.transform.childCount != CourseStageCount) throw new InvalidOperationException($"Expected {CourseStageCount} stages.");
             int rampCount = 0;
             foreach (MeshCollider collider in root.GetComponentsInChildren<MeshCollider>())
             {
@@ -431,14 +431,16 @@ namespace Eindwerk.PlayerMechanics.Editor
                 if (normals.Length < 8 || Mathf.Abs(normals[0].y - expected) > 0.02f || normals[0].y <= 0f)
                     throw new InvalidOperationException("A ramp face is inverted or outside its intended surf angle.");
             }
-            if (rampCount != 24) throw new InvalidOperationException($"Expected 24 surf ramps, got {rampCount}.");
+            int expectedRampCount = CourseStageCount * 3 - 3;
+            if (rampCount != expectedRampCount)
+                throw new InvalidOperationException($"Expected {expectedRampCount} surf ramps, got {rampCount}.");
             foreach (Transform stage in root.transform)
             {
                 var spawn = stage.Find("Checkpoint spawn");
                 if (spawn == null || !Physics.Raycast(spawn.position + Vector3.up, Vector3.down, 3f))
                     throw new InvalidOperationException("A checkpoint spawn has no supporting deck.");
             }
-            Debug.Log("KITSUNE_SURF_GEOMETRY_VALID: nine starts, 24 collidable 55-degree ramps, 18 catch/start decks.");
+            Debug.Log($"KITSUNE_SURF_GEOMETRY_VALID: {CourseStageCount} stages, {rampCount} collidable 55-degree ramps.");
         }
     }
 }

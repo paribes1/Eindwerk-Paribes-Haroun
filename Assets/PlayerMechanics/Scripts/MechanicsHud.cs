@@ -8,9 +8,16 @@ namespace Eindwerk.PlayerMechanics
         [SerializeField] private bool multiplayer;
         private GUIStyle panel;
         private GUIStyle text;
+        private KitsuneSurfCourse surfCourse;
 
         /// <summary>Kiest de titel voor de gewone testscene of de multiplayerscene.</summary>
         public void Configure(bool isMultiplayer) => multiplayer = isMultiplayer;
+
+        private void Start()
+        {
+            if (multiplayer)
+                surfCourse = FindAnyObjectByType<KitsuneSurfCourse>();
+        }
 
         private bool SettingsVisible => !multiplayer && Cursor.lockState != CursorLockMode.Locked;
 
@@ -47,7 +54,16 @@ namespace Eindwerk.PlayerMechanics
             GUILayout.BeginArea(new Rect(12, Screen.height - 156, width, 144), panel);
             GUILayout.Label(multiplayer ? "MAP  |  MULTIPLAYER TESTOMGEVING" : "PLAYER MECHANICA  |  TESTOMGEVING", text);
             GUILayout.Label("WASD / pijlen: bewegen   Shift: sprint   Spatie: springen\nCtrl / C: hurken   Muis: kijken   V: camera wisselen   R: terugzetten\nEsc: instellingen   Klik buiten het menu: besturing hervatten", text);
-            GUILayout.Label("Test de trappen, helling, springblokken en lage doorgang. Geen spelregels.", text);
+            if (surfCourse != null)
+            {
+                if (surfCourse.HasLocalPlayer)
+                    GUILayout.Label(surfCourse.Finished ? "Surfparcours voltooid!" :
+                        $"Surflevel {surfCourse.ActiveStage + 1} / {surfCourse.StageCount}", text);
+                else
+                    GUILayout.Label($"Surfparcours met {surfCourse.StageCount} levels", text);
+            }
+            else
+                GUILayout.Label("Test de trappen, helling, springblokken en lage doorgang.", text);
             GUILayout.EndArea();
 
             if (SettingsVisible)

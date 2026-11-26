@@ -22,6 +22,7 @@ namespace Eindwerk.PlayerMechanics
         public int StageCount => stageStarts.Length;
         public int ActiveStage => stage;
         public bool Finished => finished;
+        public bool HasLocalPlayer => player != null && player.HasLocalControl;
 
         /// <summary>Koppelt per deel de startplek, het doel en de valgrens aan de map.</summary>
         public void ConfigureCourse(Transform[] starts, Vector3[] centers, Vector3[] sizes, float[] floors)

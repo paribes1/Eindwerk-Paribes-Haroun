@@ -85,7 +85,7 @@ namespace Eindwerk.PlayerMechanics.Editor
         private static void ValidateCourse()
         {
             var course = UnityEngine.Object.FindAnyObjectByType<KitsuneSurfCourse>();
-            if (course == null || course.StageCount != 9) throw new InvalidOperationException("Expected 9 surf stages in Map.");
+            if (course == null || course.StageCount != KitsuneSurfSceneBuilder.CourseStageCount) throw new InvalidOperationException($"Expected {KitsuneSurfSceneBuilder.CourseStageCount} surf stages in Map.");
             foreach (var go in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include))
                 if (GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(go) != 0)
                     throw new InvalidOperationException("Missing script: " + go.name);

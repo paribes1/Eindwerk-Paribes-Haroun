@@ -74,7 +74,7 @@ namespace Eindwerk.PlayerMechanics.Editor
                 var course = UnityEngine.Object.FindAnyObjectByType<KitsuneSurfCourse>();
                 var session = UnityEngine.Object.FindAnyObjectByType<MultiplayerSession>();
                 var manager = UnityEngine.Object.FindAnyObjectByType<NetworkManager>();
-                Check(course != null && course.enabled && course.StageCount == 9, "Expected the nine-stage Map course.");
+                Check(course != null && course.enabled && course.StageCount == KitsuneSurfSceneBuilder.CourseStageCount, $"Expected {KitsuneSurfSceneBuilder.CourseStageCount} stages in Map.");
                 Check(session != null && manager != null, "Expected the original LAN session and manager.");
                 CapsulePlayerController player = FindOwnedMotor();
 
