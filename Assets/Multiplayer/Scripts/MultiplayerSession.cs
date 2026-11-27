@@ -11,13 +11,16 @@ using UnityEngine;
 namespace Eindwerk.Multiplayer
 {
     /// <summary>
-    /// Beheert het LAN-menu, verbindingen via een IP-adres en de startplaatsen.
+    /// Beheert LAN, een aparte server, verbindingen en de startplaatsen.
     /// Hiervoor zijn geen account of externe netwerkdiensten nodig.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class MultiplayerSession : MonoBehaviour
     {
         private const string ProtocolToken = "EindwerkPlayerMechanics-v1";
+        public enum ConnectionMode { Lan, ClientServer }
+        [SerializeField] private ConnectionMode connectionMode;
+        private static readonly string[] ModeLabels = { "LAN", "Client-server" };
 
         [Header("Scene references")]
         [SerializeField] private NetworkManager networkManager;
@@ -34,7 +37,7 @@ namespace Eindwerk.Multiplayer
 
         private readonly Dictionary<ulong, int> spawnSlots = new Dictionary<ulong, int>();
         private string portText = "7777";
-        private string status = "Kies Host om een LAN-sessie te starten of Client om te verbinden.";
+        private string status = "Kies LAN of Client-server en start of verbind met een sessie.";
         private bool callbacksBound;
         private bool connecting;
         private bool requestedStop;
@@ -51,6 +54,17 @@ namespace Eindwerk.Multiplayer
         public bool IsSessionActive => networkManager != null && networkManager.IsListening;
         /// <summary>Het maximale aantal spelers in een sessie.</summary>
         public int MaximumPlayers => maximumPlayers;
+        public ConnectionMode Mode => connectionMode;
+
+        /// <summary>Kiest de opstelling voordat de verbinding start.</summary>
+        public void SetConnectionMode(ConnectionMode mode)
+        {
+            if (IsSessionActive || connecting || (networkManager != null && networkManager.ShutdownInProgress))
+                throw new InvalidOperationException("Stop eerst de huidige sessie.");
+            if (mode != ConnectionMode.Lan && mode != ConnectionMode.ClientServer)
+                throw new ArgumentOutOfRangeException(nameof(mode));
+            connectionMode = mode;
+        }
 
         /// <summary>Stelt het hostadres en de poort in voordat de verbinding start.</summary>
         public void SetEndpoint(string hostAddress, ushort udpPort)
@@ -119,6 +133,11 @@ namespace Eindwerk.Multiplayer
 
         private bool StartSession(SessionMode mode)
         {
+            if (connectionMode == ConnectionMode.ClientServer && mode == SessionMode.Host)
+            {
+                status = "Kies Server starten of Client verbinden bij client-server.";
+                return false;
+            }
             if (!BindCallbacks())
             {
                 status = "Kan niet starten: de netwerkreferenties zijn niet ingesteld.";
@@ -354,14 +373,30 @@ namespace Eindwerk.Multiplayer
         {
             string[] arguments = Environment.GetCommandLineArgs();
             string mode = null;
+            string layout = null;
             for (int i = 1; i + 1 < arguments.Length; i++)
             {
                 switch (arguments[i])
                 {
+                    case "-connectionMode": layout = arguments[++i].ToLowerInvariant(); break;
                     case "-networkMode": mode = arguments[++i].ToLowerInvariant(); break;
                     case "-networkAddress": address = arguments[++i]; break;
                     case "-networkPort": portText = arguments[++i]; break;
                 }
+            }
+            if (layout != null)
+            {
+                if (layout != "lan" && layout != "client-server")
+                {
+                    status = "Onbekende verbindingskeuze. Gebruik lan of client-server.";
+                    return;
+                }
+                SetConnectionMode(layout == "lan" ? ConnectionMode.Lan : ConnectionMode.ClientServer);
+            }
+            if (connectionMode == ConnectionMode.ClientServer && mode == "host")
+            {
+                status = "Gebruik server of client bij een client-serveropstelling.";
+                return;
             }
             if (mode == "host") StartHost();
             else if (mode == "client") StartClient();
@@ -395,17 +430,25 @@ namespace Eindwerk.Multiplayer
             GUILayout.Space(7f);
             if (!active)
             {
+                connectionMode = (ConnectionMode)GUILayout.Toolbar((int)connectionMode, ModeLabels);
+                bool separateServer = connectionMode == ConnectionMode.ClientServer;
+                GUILayout.Label(separateServer
+                    ? "Een aparte server beheert de sessie. Spelers verbinden als client."
+                    : "Een speler host de sessie en speelt zelf mee op het lokale netwerk.", smallStyle);
                 GUILayout.Label("Host IPv4-adres", smallStyle);
                 address = GUILayout.TextField(address, 64);
                 GUILayout.Label("UDP-poort", smallStyle);
                 portText = GUILayout.TextField(portText, 5);
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Host starten", GUILayout.Height(32))) StartHost();
+                if (separateServer)
+                {
+                    if (GUILayout.Button("Server starten", GUILayout.Height(32))) StartServer();
+                }
+                else if (GUILayout.Button("Host starten", GUILayout.Height(32))) StartHost();
                 if (GUILayout.Button("Client verbinden", GUILayout.Height(32))) StartClient();
                 GUILayout.EndHorizontal();
-                if (GUILayout.Button("Alleen server starten", GUILayout.Height(27))) StartServer();
                 GUILayout.Label($"Maximaal {maximumPlayers} spelers. Zelfde pc: 127.0.0.1.", smallStyle);
-                GUILayout.Label($"Deze pc op het LAN: {localAddresses}", smallStyle);
+                GUILayout.Label($"Adressen van deze pc: {localAddresses}", smallStyle);
                 GUILayout.Label("Open Map in elke instantie. Gebruik bij een tweede pc het IPv4-adres van de host en dezelfde poort.", smallStyle);
             }
             else

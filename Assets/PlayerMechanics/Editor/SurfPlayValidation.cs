@@ -26,7 +26,12 @@ namespace Eindwerk.PlayerMechanics.Editor
 
         /// <summary>Start de speeltest. Sla gewijzigde scenes eerst op.</summary>
         [MenuItem("Tools/Surf/Validate Play Mode Integration")]
-        public static void Begin()
+        public static void Begin() => BeginValidation(false);
+
+        /// <summary>Controleert de aparte server zonder een lokale speler.</summary>
+        public static void BeginClientServer() => BeginValidation(true);
+
+        private static void BeginValidation(bool dedicated)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling
                 || SessionState.GetBool(Key + "active", false))
@@ -39,6 +44,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             SessionState.SetString(Key + "error", string.Empty);
             SessionState.SetString(Key + "deadline", DateTime.UtcNow.AddSeconds(30).Ticks.ToString());
             SessionState.SetInt(Key + "phase", 0);
+            SessionState.SetBool(Key + "dedicated", dedicated);
             SessionState.SetInt(Key + "goal", 0);
             SessionState.SetFloat(Key + "next", 0f);
             Directory.CreateDirectory("Logs");
@@ -86,10 +92,28 @@ namespace Eindwerk.PlayerMechanics.Editor
                         CheckLobby();
                         Pass("Map starts in its original lobby without a player or solo practice");
                         session.SetEndpoint("127.0.0.1", 18777);
-                        Check(session.StartHost(), "LAN host could not start on validation port 18777.");
+                        bool dedicated = SessionState.GetBool(Key + "dedicated", false);
+                        session.SetConnectionMode(dedicated ? MultiplayerSession.ConnectionMode.ClientServer : MultiplayerSession.ConnectionMode.Lan);
+                        Check(dedicated ? session.StartServer() : session.StartHost(), "Server kon niet starten op testpoort 18777.");
                         WaitForPhase(2, 1f);
                         break;
                     case 2:
+                        if (SessionState.GetBool(Key + "dedicated", false))
+                        {
+                            Check(manager.IsServer && !manager.IsClient && !manager.IsHost,
+                                "Een aparte server mag geen host of client zijn.");
+                            Check(Motors().Length == 0, "Een aparte server mag geen lokale speler maken.");
+                            Check(!session.StartHost(), "Een host mag niet starten in client-servermodus.");
+                            CheckLobby();
+                            bool refusedChange = false;
+                            try { session.SetConnectionMode(MultiplayerSession.ConnectionMode.Lan); }
+                            catch (InvalidOperationException) { refusedChange = true; }
+                            Check(refusedChange, "De modus mag tijdens een sessie niet wijzigen.");
+                            Pass("Client-server start zonder speler en weigert wijzigen tijdens een sessie");
+                            session.StopSession();
+                            WaitForPhase(6, 1f);
+                            break;
+                        }
                         if (!manager.IsHost || player == null || !player.HasLocalControl) return;
                         Check(player.SurfEnabled && player.IsFirstPerson && player.GetComponent<CharacterController>().enabled,
                             "LAN owner needs an active first-person surf motor.");
@@ -221,6 +245,14 @@ namespace Eindwerk.PlayerMechanics.Editor
 
         private static void OnLog(string condition, string stackTrace, LogType type)
         {
+            // Deze zoekindexfout komt uit de editor, niet uit de game. Bewaar ze als waarschuwing.
+            if (Application.isBatchMode && type == LogType.Exception
+                && stackTrace.Contains("UnityEditor.Search.SearchInit.IndexationOnStartup")
+                && stackTrace.Contains("UnityEditor.Search.SearchDatabase"))
+            {
+                Debug.LogWarning("Editorzoekindex kon niet starten; de speltests gaan verder. " + condition);
+                return;
+            }
             if (SessionState.GetBool(Key + "active", false)
                 && (type == LogType.Error || type == LogType.Exception || type == LogType.Assert)
                 && string.IsNullOrEmpty(SessionState.GetString(Key + "error", string.Empty)))
@@ -249,6 +281,7 @@ namespace Eindwerk.PlayerMechanics.Editor
             finally { EditorApplication.isPlaying = false; }
             if (error == null) Debug.Log(Passed + "\n" + result);
             else Debug.LogError(Failed + "\n" + result);
+            if (Application.isBatchMode) EditorApplication.Exit(error == null ? 0 : 1);
         }
     }
 }
